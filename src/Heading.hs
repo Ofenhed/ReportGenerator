@@ -13,7 +13,6 @@ import Data.IORef (newIORef, atomicModifyIORef', writeIORef, readIORef, IORef())
 import Control.Monad.ST (ST(..))
 import qualified Data.Vector as V
 import Control.Monad.IO.Class (liftIO)
-import System.IO.Unsafe (unsafePerformIO)
 import Crypto.Hash (hash, Digest)
 import Crypto.Hash.Algorithms (SHA3_512)
 import Data.ByteString.Char8 as C8
@@ -26,11 +25,11 @@ tableOfContentPlaceholder = Text.pack $ show (hash $ C8.pack $ Text.unpack $ "Th
 
 type Chapter = (Maybe Text.Text, (Text.Text, Text.Text)) -- (ref, chapter, title)
 
+type IOHeading = IORef Heading
+
 data Heading = Heading { headingCounter :: V.Vector Integer,
                          headingKnown :: V.Vector Chapter,
                          headingRefsUsed :: V.Vector Text.Text } deriving (Show)
-
-evaluate !var = var
 
 createHeaderState = do
   ref <- newIORef $ Heading { headingCounter = V.empty, headingKnown = V.empty, headingRefsUsed = V.empty }
@@ -54,10 +53,10 @@ addHeading state level title name = atomicModifyIORef' state $ \heading ->
       in (Heading { headingCounter = newCounter, headingKnown = newKnown,  headingRefsUsed = headingRefsUsed heading}, newHeading)
   
 
-createRef :: Monad m => IORef Heading -> Function (Run p m h)
+createRef :: IORef Heading -> Function (Run p IO h)
 createRef state [(Nothing, name)] = do
   let name' = asText name
-      name'' = unsafePerformIO $ atomicModifyIORef' state $ \heading ->
+  name'' <- liftRun $ atomicModifyIORef' state $ \heading ->
                  (if V.elem name' $ headingRefsUsed heading
                        then heading
                        else Heading { headingCounter = headingCounter heading
@@ -67,8 +66,8 @@ createRef state [(Nothing, name)] = do
   return $ toGVal $ unsafeRawHtml $ Text.concat $ ["<a href='#", htmlSource $ asHtml name, "'>", refFinder name'', "</a>"]
 
 finalizeRefs state !t = do
-  let heading = unsafePerformIO $ readIORef state
-      modifier =  \text ref ->
+  heading <- readIORef state
+  let modifier =  \text ref ->
         case (text, V.find (\(other_ref, (chp, _)) -> case other_ref of Just other_ref' -> other_ref' == ref ; _ -> False) $ headingKnown heading) of
            (Left err, _) -> Left err
            (Right text', Just (_, (chp, _))) -> Right $ Text.replace (refFinder ref) chp text'
@@ -77,8 +76,8 @@ finalizeRefs state !t = do
   return $ V.foldl modifier (Right t) $ headingRefsUsed heading
 
 finalizeTableOfContents state !t = do
-  let heading = unsafePerformIO $ readIORef state
-      toc_line ref@(_, (chp, title)) = Text.concat ["<a href='#", htmlSource $ html $ createHeadingRef ref, "' "
+  heading <- readIORef state
+  let toc_line ref@(_, (chp, title)) = Text.concat ["<a href='#", htmlSource $ html $ createHeadingRef ref, "' "
                                                    ,"class='level_", Text.pack $ show $ 1 + Text.count "." chp, "'>"
                                                    , htmlSource $ html chp, " ", htmlSource $ html title
                                                    , "</a>"]
@@ -92,14 +91,14 @@ finalizeTableOfContents state !t = do
               then Text.concat [before, table_of_contents', Text.drop (Text.length needle) at_needle]
               else before
 
-createHeading :: Monad m => IORef Heading -> Function (Run p m h)
+createHeading :: IORef Heading -> Function (Run p IO h)
 createHeading state ((Nothing, level):(Nothing, title):rest) = do
   let level' = floor $ fromJust $ asNumber level
       level'' = Text.pack $ show level'
       name = case lookup (Just "id") rest of 
                Just val -> Just $ asText val
                Nothing -> Nothing
-      heading@(_, (chp, _)) = unsafePerformIO $ addHeading state (\_ -> level') (asText title) name
+  heading@(_, (chp, _)) <- liftRun $ addHeading state (\_ -> level') (asText title) name
   let hid = createHeadingRef heading
   if level' < 1
     then throwHere $ ArgumentsError (Just "createHeading") "expected: (level, title, id=auto)"

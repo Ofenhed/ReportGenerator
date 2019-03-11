@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 
 import Database
+import DatabaseResolver
 import ReportGenerator
 
 import Network.Wai (Application, responseLBS, responseFile, requestMethod, pathInfo, Response)
@@ -68,8 +69,7 @@ main = do
   -- session <- Vault.newKey
   -- store <- mapStore_
   db <- openDatabase
-  Just contents <- getTemplate db "pentest" False
-  rendered <- render db $ Text.unpack contents
+  rendered <- render db 1
   TextIO.putStrLn rendered
   -- port <- lookup "PORT" <$> getEnvironment
   -- let settings = -- setOnExceptionResponse showError'
