@@ -21,13 +21,16 @@ import Data.ByteString.Char8 as C8
 import Debug.Trace
 
 chapterRefPrefix = "Chapter-ref-"
-refFinder = Text.pack . show . (hash . C8.pack . Text.unpack :: Text.Text -> Digest SHA3_512)
+refFinder = Text.pack . show . (hash . C8.pack . Text.unpack . (Text.append "Chapter-reference-hashed") :: Text.Text -> Digest SHA3_512)
+tableOfContentPlaceholder = Text.pack $ show (hash $ C8.pack $ Text.unpack $ "This is the table of contents, or the reference to it" :: Digest SHA3_512)
 
 type Chapter = (Maybe Text.Text, (Text.Text, Text.Text)) -- (ref, chapter, title)
 
 data Heading = Heading { headingCounter :: V.Vector Integer,
                          headingKnown :: V.Vector Chapter,
                          headingRefsUsed :: V.Vector Text.Text } deriving (Show)
+
+evaluate !var = var
 
 createHeaderState = do
   ref <- newIORef $ Heading { headingCounter = V.empty, headingKnown = V.empty, headingRefsUsed = V.empty }
@@ -70,9 +73,24 @@ finalizeRefs state !t = do
            (Left err, _) -> Left err
            (Right text', Just (_, (chp, _))) -> Right $ Text.replace (refFinder ref) chp text'
            (Right _, Nothing) -> Left $ Text.concat ["Could not find reference ", ref]
-  traceShowM heading
            
   return $ V.foldl modifier (Right t) $ headingRefsUsed heading
+
+finalizeTableOfContents state !t = do
+  let heading = unsafePerformIO $ readIORef state
+      toc_line ref@(_, (chp, title)) = Text.concat ["<a href='#", htmlSource $ html $ createHeadingRef ref, "' "
+                                                   ,"class='level_", Text.pack $ show $ 1 + Text.count "." chp, "'>"
+                                                   , htmlSource $ html chp, " ", htmlSource $ html title
+                                                   , "</a>"]
+      table_of_contents = V.foldl (\text line -> Text.append text $ toc_line line)
+                                  "<div class='table_of_contents'><h1>Table of Contents</h1>"
+                                  $ headingKnown heading
+      table_of_contents' = Text.append table_of_contents "</div>"
+      needle = tableOfContentPlaceholder
+      (before, at_needle) = Text.breakOn needle t
+  return $ if Text.length at_needle > 0
+              then Text.concat [before, table_of_contents', Text.drop (Text.length needle) at_needle]
+              else before
 
 createHeading :: Monad m => IORef Heading -> Function (Run p m h)
 createHeading state ((Nothing, level):(Nothing, title):rest) = do

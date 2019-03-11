@@ -25,6 +25,7 @@ dependencies:
 - cryptonite
 - data-default
 - data-default-class
+- file-embed
 - ginger
 - http-types
 - sqlite-simple
