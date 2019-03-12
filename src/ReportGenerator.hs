@@ -7,7 +7,7 @@ import Heading
 import qualified Data.Text as Text
 
 import Data.Default.Class
-import Text.Ginger.Run (makeContextHtmlM, runGingerT)
+import Text.Ginger.Run (makeContextHtmlM, runGingerT, runtimeErrorMessage)
 import Text.Ginger.Parse (parseGinger)
 import Text.Ginger (toGVal, ParserError(..), VarName, Run)
 import Text.Ginger.GVal (fromFunction, GVal(..))
@@ -46,6 +46,8 @@ contextLookup reportState var = do
              "username" -> toGVal $ Text.pack "haxxor"
              "customer" -> toGVal $ Text.pack "Some customer"
              "header" -> fromFunction $ createHeading headerState
+             "pop_header" -> fromFunction $ popHeading headerState
+             "push_header" -> fromFunction $ pushHeading headerState
              "confidential" -> toGVal True
              "ref" -> fromFunction $ createRef headerState
              "table_of_contents" -> toGVal $ tableOfContentPlaceholder
@@ -61,10 +63,13 @@ render conn report = do
       vec <- newIORef $ D.empty
       let reportState = ReportState { stateReportId = report, stateTemplateId = templateId $ reportTemplate t, stateHeadingState = headerState, stateDbConn = conn }
           context = makeContextHtmlM (contextLookup reportState) (\n -> atomicModifyIORef' vec (\state -> (D.snoc state (htmlSource n), ())))
-      Right _ <- runGingerT context parsed
-      vec' <- readIORef vec
-      let h = D.foldr Text.append Text.empty vec'
-      finalized <- finalizeRefs headerState h
-      case finalized of
-        Right h -> finalizeTableOfContents headerState h >>= return
-        Left err -> return $ Text.concat ["Error: ", err]
+      result <- runGingerT context parsed
+      case result of
+        Right _ -> do
+                   vec' <- readIORef vec
+                   let h = D.foldr Text.append Text.empty vec'
+                   finalized <- finalizeRefs headerState h
+                   case finalized of
+                     Right h -> finalizeTableOfContents headerState h >>= return
+                     Left err -> return $ Text.concat ["Error: ", err]
+        Left err -> return $ Text.concat ["Error: ", runtimeErrorMessage err]

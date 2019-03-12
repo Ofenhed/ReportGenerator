@@ -29,11 +29,26 @@ type IOHeading = IORef Heading
 
 data Heading = Heading { headingCounter :: V.Vector Integer,
                          headingKnown :: V.Vector Chapter,
-                         headingRefsUsed :: V.Vector Text.Text } deriving (Show)
+                         headingRefsUsed :: V.Vector Text.Text,
+                         headingCounterStack :: V.Vector Int } deriving (Show)
 
 createHeaderState = do
-  ref <- newIORef $ Heading { headingCounter = V.empty, headingKnown = V.empty, headingRefsUsed = V.empty }
+  ref <- newIORef $ Heading { headingCounter = V.empty, headingKnown = V.empty, headingRefsUsed = V.empty, headingCounterStack = V.empty }
   return ref
+
+pushHeading state [] = do
+  liftRun $ atomicModifyIORef' state $ \heading -> (Heading { headingCounter = headingCounter heading
+                                                            , headingKnown = headingKnown heading
+                                                            , headingRefsUsed = headingRefsUsed heading
+                                                            , headingCounterStack = V.snoc (headingCounterStack heading) $ V.length $ headingCounter heading }, ())
+  return $ toGVal ()
+
+popHeading state [] = do
+  liftRun $ atomicModifyIORef' state $ \heading -> (Heading { headingCounter = headingCounter heading
+                                                            , headingKnown = headingKnown heading
+                                                            , headingRefsUsed = headingRefsUsed heading
+                                                            , headingCounterStack = V.take ((V.length $ headingCounterStack heading) - 1) $ headingCounterStack heading}, ())
+  return $ toGVal ()
 
 createHeadingRef :: Chapter -> Text.Text
 createHeadingRef (Just name, _) = name
@@ -41,7 +56,9 @@ createHeadingRef (Nothing, (chp, _)) = Text.append chapterRefPrefix chp
 
 addHeading state level title name = atomicModifyIORef' state $ \heading ->
     let currHeading = V.length $ headingCounter heading
-        level' = level currHeading
+        level' = if V.null (headingCounterStack heading)
+                   then level
+                   else level + (V.last $ headingCounterStack heading)
         newCounter = case compare level' currHeading of
                        GT -> (V.++) (headingCounter heading)
                                     (V.replicate (level' - currHeading) 1)
@@ -50,7 +67,7 @@ addHeading state level title name = atomicModifyIORef' state $ \heading ->
         newChapter = Text.drop 1 $ V.foldl' (\acc new -> Text.append (Text.append acc ".") $ Text.pack $ show new) Text.empty newCounter
         newHeading = (name, (newChapter, title))
         newKnown = V.snoc (headingKnown heading) newHeading
-      in (Heading { headingCounter = newCounter, headingKnown = newKnown,  headingRefsUsed = headingRefsUsed heading}, newHeading)
+      in (Heading { headingCounter = newCounter, headingKnown = newKnown,  headingRefsUsed = headingRefsUsed heading, headingCounterStack = headingCounterStack heading}, (newHeading, level'))
   
 
 createRef :: IORef Heading -> Function (Run p IO h)
@@ -61,7 +78,8 @@ createRef state [(Nothing, name)] = do
                        then heading
                        else Heading { headingCounter = headingCounter heading
                                     , headingKnown = headingKnown heading
-                                    , headingRefsUsed = V.snoc (headingRefsUsed heading) name'}
+                                    , headingRefsUsed = V.snoc (headingRefsUsed heading) name'
+                                    , headingCounterStack = headingCounterStack heading }
                     , name')
   return $ toGVal $ unsafeRawHtml $ Text.concat $ ["<a href='#", htmlSource $ asHtml name, "'>", refFinder name'', "</a>"]
 
@@ -94,13 +112,12 @@ finalizeTableOfContents state !t = do
 createHeading :: IORef Heading -> Function (Run p IO h)
 createHeading state ((Nothing, level):(Nothing, title):rest) = do
   let level' = floor $ fromJust $ asNumber level
-      level'' = Text.pack $ show level'
       name = case lookup (Just "id") rest of 
                Just val -> Just $ asText val
                Nothing -> Nothing
-  heading@(_, (chp, _)) <- liftRun $ addHeading state (\_ -> level') (asText title) name
+  (heading@(_, (chp, _)), real_level) <- liftRun $ addHeading state level' (asText title) name
   let hid = createHeadingRef heading
-  if level' < 1
+  if real_level < 1
     then throwHere $ ArgumentsError (Just "createHeading") "expected: (level, title, id=auto)"
-    else return $ toGVal $ unsafeRawHtml $ Text.concat $ ["<h", level'', " class='heading' id='", htmlSource $ html hid, "'>",
-                                                   htmlSource $ html chp, " ", htmlSource $ asHtml title, "</h", level'', ">"]
+    else return $ toGVal $ unsafeRawHtml $ Text.concat $ ["<h", Text.pack $ show real_level, " class='heading' id='", htmlSource $ html hid, "'>",
+                                                   htmlSource $ html chp, " ", htmlSource $ asHtml title, "</h", Text.pack $ show real_level, ">"]
