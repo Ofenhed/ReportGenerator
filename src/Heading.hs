@@ -17,8 +17,6 @@ import Crypto.Hash (hash, Digest)
 import Crypto.Hash.Algorithms (SHA3_512)
 import Data.ByteString.Char8 as C8
 
-import Debug.Trace
-
 chapterRefPrefix = "Chapter-ref-"
 refFinder = Text.pack . show . (hash . C8.pack . Text.unpack . (Text.append "Chapter-reference-hashed") :: Text.Text -> Digest SHA3_512)
 tableOfContentPlaceholder = Text.pack $ show (hash $ C8.pack $ Text.unpack $ "This is the table of contents, or the reference to it" :: Digest SHA3_512)
@@ -37,17 +35,12 @@ createHeaderState = do
   return ref
 
 pushHeading state [] = do
-  liftRun $ atomicModifyIORef' state $ \heading -> (Heading { headingCounter = headingCounter heading
-                                                            , headingKnown = headingKnown heading
-                                                            , headingRefsUsed = headingRefsUsed heading
-                                                            , headingCounterStack = V.snoc (headingCounterStack heading) $ V.length $ headingCounter heading }, ())
+  liftRun $ atomicModifyIORef' state $ \heading -> (heading { headingCounterStack = V.snoc (headingCounterStack heading) $ V.length $ headingCounter heading }, ())
   return $ toGVal ()
 
 popHeading state [] = do
-  liftRun $ atomicModifyIORef' state $ \heading -> (Heading { headingCounter = headingCounter heading
-                                                            , headingKnown = headingKnown heading
-                                                            , headingRefsUsed = headingRefsUsed heading
-                                                            , headingCounterStack = V.take ((V.length $ headingCounterStack heading) - 1) $ headingCounterStack heading}, ())
+  _ <- liftRun $ atomicModifyIORef' state $ \heading -> let newLen = (V.length $ headingCounterStack heading) - 1
+                                                                in (heading { headingCounterStack = V.take (max 0 newLen) $ headingCounterStack heading}, newLen >= 0)
   return $ toGVal ()
 
 createHeadingRef :: Chapter -> Text.Text
@@ -67,7 +60,7 @@ addHeading state level title name = atomicModifyIORef' state $ \heading ->
         newChapter = Text.drop 1 $ V.foldl' (\acc new -> Text.append (Text.append acc ".") $ Text.pack $ show new) Text.empty newCounter
         newHeading = (name, (newChapter, title))
         newKnown = V.snoc (headingKnown heading) newHeading
-      in (Heading { headingCounter = newCounter, headingKnown = newKnown,  headingRefsUsed = headingRefsUsed heading, headingCounterStack = headingCounterStack heading}, (newHeading, level'))
+      in (heading { headingCounter = newCounter, headingKnown = newKnown }, (newHeading, level'))
   
 
 createRef :: IORef Heading -> Function (Run p IO h)
@@ -76,10 +69,7 @@ createRef state [(Nothing, name)] = do
   name'' <- liftRun $ atomicModifyIORef' state $ \heading ->
                  (if V.elem name' $ headingRefsUsed heading
                        then heading
-                       else Heading { headingCounter = headingCounter heading
-                                    , headingKnown = headingKnown heading
-                                    , headingRefsUsed = V.snoc (headingRefsUsed heading) name'
-                                    , headingCounterStack = headingCounterStack heading }
+                       else heading { headingRefsUsed = V.snoc (headingRefsUsed heading) name' }
                     , name')
   return $ toGVal $ unsafeRawHtml $ Text.concat $ ["<a href='#", htmlSource $ asHtml name, "'>", refFinder name'', "</a>"]
 
@@ -119,5 +109,5 @@ createHeading state ((Nothing, level):(Nothing, title):rest) = do
   let hid = createHeadingRef heading
   if real_level < 1
     then throwHere $ ArgumentsError (Just "createHeading") "expected: (level, title, id=auto)"
-    else return $ toGVal $ unsafeRawHtml $ Text.concat $ ["<h", Text.pack $ show real_level, " class='heading' id='", htmlSource $ html hid, "'>",
-                                                   htmlSource $ html chp, " ", htmlSource $ asHtml title, "</h", Text.pack $ show real_level, ">"]
+    else return $ toGVal $ unsafeRawHtml $ Text.concat $ ["<h", Text.pack $ show real_level, " class='heading' id='", htmlSource $ html hid, "' counter='",
+                                                   htmlSource $ html chp, "'>", htmlSource $ asHtml title, "</h", Text.pack $ show real_level, ">"]

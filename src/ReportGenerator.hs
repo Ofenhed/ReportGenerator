@@ -9,7 +9,7 @@ import qualified Data.Text as Text
 import Data.Default.Class
 import Text.Ginger.Run (makeContextHtmlM, runGingerT, runtimeErrorMessage)
 import Text.Ginger.Parse (parseGinger)
-import Text.Ginger (toGVal, ParserError(..), VarName, Run)
+import Text.Ginger (toGVal, ParserError(..), VarName, Run, liftRun)
 import Text.Ginger.GVal (fromFunction, GVal(..))
 import Text.Ginger.Html (htmlSource, unsafeRawHtml, htmlSource, html, Html)
 import Text.Ginger.AST (Template)
@@ -22,9 +22,9 @@ import qualified Data.Text.IO                   as TextIO
 
 import Debug.Trace
 
-includeResolver conn file = do
+includeResolver conn context file = do
   case Text.splitOn "/" $ Text.pack file of
-    [".", "template", t] -> getTemplate conn t True >>= return . (maybe Nothing (Just . Text.unpack))
+    [".", "template", t] -> getTemplate conn context t True >>= return . (maybe Nothing (Just . Text.unpack))
     _ -> return $ Nothing
 
 data ReportState = ReportState { stateReportId :: Int,
@@ -35,35 +35,36 @@ data ReportState = ReportState { stateReportId :: Int,
 -- getTemplateVar state = do
   
 
-contextLookup :: ReportState -> VarName -> Run p IO Html (GVal (Run p IO Html))
-contextLookup reportState var = do
+contextLookup :: ReportState -> IOReportContext -> VarName -> Run p IO Html (GVal (Run p IO Html))
+contextLookup reportState context var = do
   let headerState = stateHeadingState reportState
-  return $ case var of
+  case var of
              -- "template_var" -> fromFunction $ 
              -- "sub_var" -> fromFunction $
              -- "template_vars" -> fromFunction $
              -- "sub_vars" -> fromFunction $
-             "username" -> toGVal $ Text.pack "haxxor"
-             "customer" -> toGVal $ Text.pack "Some customer"
-             "header" -> fromFunction $ createHeading headerState
-             "pop_header" -> fromFunction $ popHeading headerState
-             "push_header" -> fromFunction $ pushHeading headerState
-             "confidential" -> toGVal True
-             "ref" -> fromFunction $ createRef headerState
-             "table_of_contents" -> toGVal $ tableOfContentPlaceholder
-             _ -> def
+             "username" -> return $ toGVal $ Text.pack "haxxor"
+             "customer" -> return $ toGVal $ Text.pack "Some customer"
+             "header" -> return $ fromFunction $ createHeading headerState
+             "pop_header" -> return $ fromFunction $ popHeading headerState
+             "push_header" -> return $ fromFunction $ pushHeading headerState
+             "confidential" -> return $ toGVal True
+             "ref" -> return $ fromFunction $ createRef headerState
+             "table_of_contents" -> return $ toGVal $ tableOfContentPlaceholder
+             "template" -> liftRun $ readIORef context >>= return . traceShowId . toGVal . traceShowId . reportContextVariable
+             _ -> return def
 
 render conn report = do
   headerState <- createHeaderState
   template' <- getReport conn report
   case template' of
     Nothing -> return "Error: Could not find template for report"
-    Just t -> do
-      Right parsed <- parseGinger (includeResolver conn) Nothing $ Text.unpack $ templateSource $ reportTemplate t
+    Just (t, context) -> do
+      Right parsed <- parseGinger (includeResolver conn context) Nothing $ Text.unpack $ templateSource $ reportTemplate t
       vec <- newIORef $ D.empty
       let reportState = ReportState { stateReportId = report, stateTemplateId = templateId $ reportTemplate t, stateHeadingState = headerState, stateDbConn = conn }
-          context = makeContextHtmlM (contextLookup reportState) (\n -> atomicModifyIORef' vec (\state -> (D.snoc state (htmlSource n), ())))
-      result <- runGingerT context parsed
+          gingerContext = makeContextHtmlM (contextLookup reportState context) (\n -> atomicModifyIORef' vec (\state -> (D.snoc state (htmlSource n), ())))
+      result <- runGingerT gingerContext parsed
       case result of
         Right _ -> do
                    vec' <- readIORef vec
