@@ -51,7 +51,7 @@ contextLookup reportState context var = do
              "confidential" -> return $ toGVal True
              "ref" -> return $ fromFunction $ createRef headerState
              "table_of_contents" -> return $ toGVal $ tableOfContentPlaceholder
-             "template" -> liftRun $ readIORef context >>= return . traceShowId . toGVal . traceShowId . reportContextVariable
+             "template" -> liftRun $ readIORef context >>= return . toGVal . reportContextVariable
              _ -> return def
 
 render conn report = do
