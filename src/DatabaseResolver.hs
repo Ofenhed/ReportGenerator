@@ -44,20 +44,23 @@ data TemplateVarParent = TemplateVarParent Int
                        | TemplateVarParentVars Int deriving Show
 
 getVariable :: Connection -> TemplateVarParent -> Int -> IO [(Int, Maybe Int, Text.Text, Maybe Text.Text)]
-getVariable conn parent report = do
-  let (target, val) = case parent of
+getVariable conn template parent = do
+  let (target, val) = case template of
                         TemplateVarParent i -> ("template", i)
                         TemplateVarParentVar i -> ("templateVar", i)
                         TemplateVarParentVars i -> ("templateVars", i)
-  query conn (Query $ Text.concat ["SELECT TemplateVar.id, ReportVar.id, TemplateVar.name, CASE WHEN ReportVar.data IS NOT NULL THEN ReportVar.data ELSE TemplateVar.data END AS data FROM TemplateVar LEFT JOIN ReportVar ON ReportVar.template == TemplateVar.id AND ReportVar.parent == ? WHERE TemplateVar.", target, " == ?"]) (report, val)
+  query conn (Query $ Text.concat ["SELECT TemplateVar.id, ReportVar.id, TemplateVar.name, CASE WHEN ReportVar.data IS NOT NULL THEN ReportVar.data ELSE TemplateVar.data END AS data FROM TemplateVar LEFT JOIN ReportVar ON ReportVar.template == TemplateVar.id AND ReportVar.parent == ? WHERE TemplateVar.", target, " == ?"]) (parent, val)
 
-getVariables :: Connection -> TemplateVarParent -> Int -> IO [(Int, Text.Text, Maybe Text.Text)]
-getVariables conn parent report = do
-  let (target, val) = case parent of
+getVariables :: Connection -> TemplateVarParent -> Int -> IO [(Int, Text.Text, [(Int, Text.Text)])]
+getVariables conn template parent = do
+  let (target, val) = case template of
                         TemplateVarParent i -> ("template", i)
                         TemplateVarParentVar i -> ("templateVar", i)
                         TemplateVarParentVars i -> ("templateVars", i)
-  query conn (Query $ Text.concat ["SELECT TemplateVars.id, TemplateVars.name, ReportVars.data RIGHT JOIN ReportVars ON ReportsVar.parent == TemplateVar.id and ReportVars.report == ? FROM TemplateVars WHERE ", target, " == ?"]) (report, val)
+  vars <- query conn (Query $ Text.concat ["SELECT TemplateVars.id, TemplateVars.name FROM TemplateVars WHERE ", target, " == ?"]) (Only val)
+  flip mapM vars $ \(tId, tName) -> do
+    values <- query conn "SELECT id, data FROM ReportVars WHERE parent == ? AND template == ? ORDER BY weight ASC" (parent, tId)
+    return $ (tId, tName, values)
 
 getValue conn report var = do
   result <- query conn "SELECT * FROM ReportVar WHERE report == ? AND parent == ?" (report, var)
@@ -96,13 +99,21 @@ includeTemplateVariables conn context key template = do
   context' <- readIORef context
   let findVariablesRecursive from parent = do
         var <- getVariable conn from parent
-        flip mapM var $ \(tempId, varId, name, d) -> do
+        var' <- flip mapM var $ \(tempId, varId, name, d) -> do
             -- vars <- getVariables conn from
-            otherVar <- case varId of Just varId' -> findVariablesRecursive (TemplateVarParentVar tempId) varId' ; Nothing -> return []
+            otherVar <- case varId of Just varId' -> findVariablesRecursive (TemplateVarParentVar tempId) varId' ; Nothing -> return Map.empty
             -- otherVars <- mapM (findVariablesRecursive . TemplateVarParentVars) vars
-            return $ (name, ReportVar { reportVarVariables = Map.fromList otherVar, reportVarValue = d, reportVarArray = [] })
+            return $ (name, ReportVar { reportVarVariables = otherVar, reportVarValue = d, reportVarArray = [] })
+        vars <- getVariables conn from parent
+        vars' <- flip mapM vars $ \(tempId, name, v) -> do
+            v' <- flip mapM v $ \(rId, val) -> do
+                others <- findVariablesRecursive (TemplateVarParentVars tempId) rId
+                return $ ReportVar { reportVarVariables = others, reportVarValue = Just val, reportVarArray = [] }
+            return (name, ReportVar { reportVarVariables = Map.empty, reportVarValue = Nothing, reportVarArray = v' })
+        let merged = Map.unionWith (\var vars -> var { reportVarArray = reportVarArray vars }) (Map.fromList var') (Map.fromList vars')
+        return merged
   vars <- findVariablesRecursive (TemplateVarParent template) (reportContextId context')
-  atomicModifyIORef' context $ \c -> (c { reportContextVariable = Map.insert key (ReportVar { reportVarVariables = Map.fromList vars, reportVarValue = Nothing, reportVarArray = []}) (reportContextVariable c) }, ())
+  atomicModifyIORef' context $ \c -> (c { reportContextVariable = Map.insert key (ReportVar { reportVarVariables = vars, reportVarValue = Nothing, reportVarArray = []}) (reportContextVariable c) }, ())
 
 getTemplate :: Connection -> IOReportContext -> Text.Text -> Bool -> IO (Maybe Text.Text)
 getTemplate conn context template included = do

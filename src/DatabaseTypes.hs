@@ -31,7 +31,7 @@ setupDatabase conn = withTransaction conn $ do
 
     execute conn "INSERT INTO Template (includeName, source, includable) VALUES ('pentest', ?, 0);" (Only $ Encoding.decodeUtf8 $(embedFile "templates/default_report.txt"))
     tempId <- lastInsertRowId conn
-    execute conn "INSERT INTO Template (includeName, source, includable) VALUES ('exec_summary', ?, 1);" (Only $ Text.pack "This is the executive summary. Stuff was {{template.exec_summary.summary}}. {{template.exec_summary.summary.explained}}")
+    execute conn "INSERT INTO Template (includeName, source, includable) VALUES ('exec_summary', ?, 1);" (Only $ Text.pack "{{ heading(1, 'Executive Summary') }} This is the executive summary. Stuff was {{template.exec_summary.summary}}. {{template.exec_summary.summary.explained}}")
     execSum <- lastInsertRowId conn
     execute conn "INSERT INTO TemplateVar (template, name, description, type) VALUES (?, 'confidential', 'Whether this report is confidential', 'text');" (Only tempId)
     confidential <- lastInsertRowId conn
@@ -45,12 +45,23 @@ setupDatabase conn = withTransaction conn $ do
     recVar <- lastInsertRowId conn
     execute conn "INSERT INTO TemplateVars (template, name, description, type) VALUES (?, 'people', 'The people involved in this report', 'text');" (Only tempId)
     peopleId <- lastInsertRowId conn
+    execute conn "INSERT INTO TemplateVars (templateVars, name, description, type) VALUES (?, 'title', 'Titles for a person', 'text');" (Only peopleId)
+    titleId <- lastInsertRowId conn
+    execute conn "INSERT INTO TemplateVar (templateVars, name, description, type) VALUES (?, 'email', 'Email to person for report', 'text');" (Only peopleId)
+    emailId <- lastInsertRowId conn
     execute conn "INSERT INTO Report (template, name) VALUES (?, 'Some customer')" (Only tempId)
     reportId <- lastInsertRowId conn
     execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, 'Super Important Customer #1');" (custId, reportId)
+    execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, '1');" (confidential, reportId)
     execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, 'Super Important Customer Street');" (cust2Id, reportId)
     execute conn "INSERT INTO ReportVars (template, parent, data, weight) VALUES (?, ?, 'Marcus Ofenhed', 1);" (peopleId, reportId)
+    marcus <- lastInsertRowId conn
     execute conn "INSERT INTO ReportVars (template, parent, data, weight) VALUES (?, ?, 'Someone Else', 2);" (peopleId, reportId)
+    other <- lastInsertRowId conn
+    execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, 'Marcus.Ofenhed@hotmail.com');" (emailId, marcus)
+    execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, 'Someone.Else@hotmail.com');" (emailId, other)
     execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, 'Awesome');" (execVar, reportId)
+    execute conn "INSERT INTO ReportVars (template, parent, data, weight) VALUES (?, ?, 'Super 1337 Haxxor', 1);" (titleId, other)
+    execute conn "INSERT INTO ReportVars (template, parent, data, weight) VALUES (?, ?, 'Has won an Apex Legend match', 2);" (titleId, other)
     prevRef <- lastInsertRowId conn
     execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, 'Still awesome');" (recVar, prevRef)

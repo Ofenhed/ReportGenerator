@@ -45,9 +45,9 @@ contextLookup reportState context var = do
              -- "sub_vars" -> fromFunction $
              "username" -> return $ toGVal $ Text.pack "haxxor"
              "customer" -> return $ toGVal $ Text.pack "Some customer"
-             "header" -> return $ fromFunction $ createHeading headerState
-             "pop_header" -> return $ fromFunction $ popHeading headerState
-             "push_header" -> return $ fromFunction $ pushHeading headerState
+             "heading" -> return $ fromFunction $ createHeading headerState
+             "pop_heading" -> return $ fromFunction $ popHeading headerState
+             "push_heading" -> return $ fromFunction $ pushHeading headerState
              "confidential" -> return $ toGVal True
              "ref" -> return $ fromFunction $ createRef headerState
              "table_of_contents" -> return $ toGVal $ tableOfContentPlaceholder
