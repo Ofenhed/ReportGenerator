@@ -21,6 +21,7 @@ import qualified Data.DList                     as D
 import qualified Data.Text.IO                   as TextIO
 import Data.Text.AhoCorasick.Automaton (CaseSensitivity(CaseSensitive))
 import qualified Data.Text.AhoCorasick.Replacer as Replacer
+import Control.Monad.Writer (execWriter, tell)
 
 import Debug.Trace
 
@@ -64,7 +65,7 @@ render conn report = do
                    finalized <- finalizeRefs headerState
                    toc <- finalizeTableOfContents headerState
                    let replacer = Replacer.build CaseSensitive $ toc:finalized
-                   let h = foldl' (\l r -> Text.append l $ Replacer.run replacer (htmlSource r)) Text.empty vec'
+                   let h = execWriter $ mapM (\r -> tell $ Replacer.run replacer (htmlSource r)) $ D.toList vec'
                    return h
                    --case finalized of
                    --  Right h -> finalizeTableOfContents headerState h >>= return
