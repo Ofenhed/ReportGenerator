@@ -39,6 +39,7 @@ dependencies:
 - wai-extra
 - wai-session
 - warp
+- warp-tls
   # - file-embed
   # - filepath
   # - random

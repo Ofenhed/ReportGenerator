@@ -25,6 +25,10 @@ type Chapter = (Maybe Text.Text, (Text.Text, Text.Text)) -- (ref, chapter, title
 
 type IOHeading = IORef Heading
 
+-- data HtmlWithReference = HtmlWithReference Html
+-- instance ToGVal m (HtmlWithReference) where
+--   toGVal x = HtmlWithReference 
+
 data Heading = Heading { headingCounter :: V.Vector Integer,
                          headingKnown :: V.Vector Chapter,
                          headingRefsUsed :: V.Vector Text.Text,

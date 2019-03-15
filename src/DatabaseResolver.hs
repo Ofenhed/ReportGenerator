@@ -30,13 +30,14 @@ instance ToGVal m ReportVar where
                   , asLookup = Just $ flip Map.lookup $ Map.map toGVal $ reportVarVariables xs
                   }
 
-instance ToGVal m (Map.Map Text.Text ReportVar) where
+instance ToGVal m a => ToGVal m (Map.Map Text.Text a) where
   toGVal xs = def { asLookup = Just $ flip Map.lookup $ Map.map toGVal xs
                   , isNull = Map.null xs
                   }
 
 data ReportContext = ReportContext { reportContextId :: Int
-                                   , reportContextVariable :: Map.Map Text.Text ReportVar } deriving Show
+                                   , reportContextVariable :: Map.Map Text.Text ReportVar
+                                   , reportContextCustomVariable :: Map.Map Text.Text Text.Text } deriving Show
 type IOReportContext = IORef ReportContext
 
 data TemplateVarParent = TemplateVarParent Int
@@ -88,10 +89,12 @@ instance FromRow Report where
 getReport :: Connection -> Int -> IO (Maybe (Report, IOReportContext))
 getReport conn reportId = do
   var <- query conn "SELECT Report.id, Report.name, Template.* FROM Report LEFT JOIN Template ON Report.template == Template.id WHERE Report.id = ?" (Only reportId)
-  context <- newIORef $ ReportContext { reportContextId = reportId, reportContextVariable = Map.empty }
+  context <- newIORef $ ReportContext { reportContextId = reportId, reportContextVariable = Map.empty, reportContextCustomVariable = Map.empty }
   case var of
     [] -> return Nothing
     [r] -> do
+      var <- query conn "SELECT CustVar.name, CustVar.data FROM CustVar WHERE CustVar.report = ?" (Only reportId)
+      atomicModifyIORef' context $ \c -> (c { reportContextCustomVariable = Map.fromList var }, ())
       includeTemplateVariables conn context (templateIncludeName $ reportTemplate r) $ templateId $ reportTemplate r
       return $ Just (r, context)
 
@@ -117,9 +120,8 @@ includeTemplateVariables conn context key template = do
 
 getTemplate :: Connection -> IOReportContext -> Text.Text -> Bool -> IO (Maybe Text.Text)
 getTemplate conn context template included = do
-  var <- if included
-           then query conn "SELECT id, includeName, source FROM Template WHERE includeName == ? AND includable == 1" (Only template)
-           else query conn "SELECT id, includeName, source FROM Template WHERE includeName == ?" (Only template)
+  traceShowM template
+  var <- query conn "SELECT id, includeName, source FROM Template WHERE includeName == ? AND (? == 0 OR includable == 1)" (template, included)
   context' <- readIORef context
   case var of
     [] -> return $ Nothing
