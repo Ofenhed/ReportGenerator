@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
-module DatabaseTypes where
+module Database.Types where
 import Data.FileEmbed (embedFile)
 
 import Control.Applicative
@@ -29,7 +29,7 @@ setupDatabase conn = withTransaction conn $ do
 
     -- Test data
 
-    execute conn "INSERT INTO Template (includeName, source, includable) VALUES ('pentest', ?, 0);" (Only $ Encoding.decodeUtf8 $(embedFile "templates/default_report.txt"))
+    execute conn "INSERT INTO Template (includeName, source, includable) VALUES ('pentest', ?, 0);" (Only $ Encoding.decodeUtf8 $(embedFile "temp/default_report.txt"))
     tempId <- lastInsertRowId conn
     execute conn "INSERT INTO Template (includeName, source, includable) VALUES ('exec_summary', ?, 1);" (Only $ Text.pack "{{ heading(1, 'Executive Summary') }} This is the executive summary. Stuff was {{template.exec_summary.summary}}. {{template.exec_summary.summary.explained}}")
     execSum <- lastInsertRowId conn

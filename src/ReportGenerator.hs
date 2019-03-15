@@ -1,8 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 module ReportGenerator where
 
-import DatabaseResolver
+import Database.Resolver
 import Heading
+import Types
 
 import qualified Data.Text as Text
 
@@ -11,7 +12,7 @@ import Text.Ginger.Run (makeContextHtmlM, runGingerT, runtimeErrorMessage)
 import Text.Ginger.Parse (parseGinger)
 import Text.Ginger (toGVal, ParserError(..), VarName, Run, liftRun)
 import Text.Ginger.GVal (fromFunction, GVal(..))
-import Text.Ginger.Html (htmlSource, unsafeRawHtml, htmlSource, html, Html)
+import Text.Ginger.Html (unsafeRawHtml, htmlSource, html, Html)
 import Text.Ginger.AST (Template)
 import Data.Maybe (maybe)
 import Data.IORef (newIORef, atomicModifyIORef', writeIORef, readIORef, IORef())
@@ -65,7 +66,7 @@ render conn report = do
                    finalized <- finalizeRefs headerState
                    toc <- finalizeTableOfContents headerState
                    let replacer = Replacer.build CaseSensitive $ toc:finalized
-                   let h = execWriter $ mapM (\r -> tell $ Replacer.run replacer (htmlSource r)) $ D.toList vec'
+                   let h = execWriter $ mapM (tell . (Replacer.run replacer) . htmlSource) $ D.toList vec'
                    return h
                    --case finalized of
                    --  Right h -> finalizeTableOfContents headerState h >>= return

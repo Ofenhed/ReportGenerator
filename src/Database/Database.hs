@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Database where
+module Database.Database where
 
-import DatabaseTypes
+import Database.Types
 import Control.Applicative
 import Data.Default.Class
 import Database.SQLite.Simple

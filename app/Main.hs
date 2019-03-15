@@ -1,10 +1,12 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TemplateHaskell #-}
 
-import Database
-import DatabaseResolver
+import Database.Database
 import ReportGenerator
 import Types
+import Templates
+import Common
 
 import Network.Wai (Application, responseLBS, responseFile, requestMethod, pathInfo, Response)
 import Network.Wai.Session (withSession)
@@ -23,21 +25,18 @@ import Control.Exception (fromException, SomeException)
 
 import qualified Data.Vault.Lazy                as Vault
 import qualified Data.Text                      as Text
-import qualified Data.Text.Encoding             as Encoding
-import qualified Data.Text.Lazy.Encoding        as LazyEncoding
 import qualified Data.Text.IO                   as TextIO
 import qualified Database.SQLite.Simple         as DB
 import qualified Data.ByteString.Lazy.Char8     as LC8
+import qualified Data.ByteString.Char8          as C8
 
 staticDir = "static"
 serverDir = "static/server"
 clientDir = "static/client"
 
-responseText code headers = (responseLBS code $ map (\(x, y) -> (x, Encoding.encodeUtf8 y)) headers) . LazyEncoding.encodeUtf8
-
 app sess req f = do
   let call x = x sess req f
-  case (requestMethod req, pathInfo req) of
+  case (requestMethod req, pathInfo req, Just 1) of
     -- ("GET", ["static", file]) -> f $ responseFile status200 [] (staticDir </> (takeFileName $ Text.unpack file)) Nothing
     -- -- ("GET", ["server", file]) -> f $ responseFile status200 [] (serverDir </> (takeFileName $ Text.unpack file)) Nothing
     -- -- ("GET", ["client", file]) -> f $ responseFile status200 [] (clientDir </> (takeFileName $ Text.unpack file)) Nothing
@@ -63,21 +62,20 @@ app sess req f = do
     -- ("POST", ["tests", "delete", id]) -> call $ verifyCsrf $ doRemoveTest (read (Text.unpack id) :: Int)
 
     -- ("GET", ["report"]) -> call $ showReport
+    ("GET", ["template"], Just _) -> call $ listTemplates
 
     _ -> f $ responseText status404 [("Content-Type", "text/plain")] "Oh, sorry, I could not find this site"
 
--- showError' :: SomeException -> Response
--- showError' e = case fromException e
---                  of (Just (VisibleError msg)) -> responseLBS status500 [("Content-Type", "text/plain")] $ LC8.concat ["Error: ", LC8.pack $ Text.unpack msg]
---                     _ -> responseLBS status500 [("Content-Type", "text/plain")] "Something went screwy, and before you knew he was trying to kill everyone."
+showError' :: SomeException -> Response
+showError' e = case fromException e
+                 of (Just (VisibleError msg)) -> responseLBS status500 [("Content-Type", "text/plain")] $ LC8.concat ["Error: ", LC8.pack $ Text.unpack msg]
+                    _ -> responseLBS status500 [("Content-Type", "text/plain")] "Something went screwy, and before you knew he was trying to kill everyone."
 
 main = do
   session <- Vault.newKey
   store <- mapStore_
   db <- openDatabase
-  rendered <- render db 1
-  TextIO.putStrLn rendered
   port <- lookup "PORT" <$> getEnvironment
-  let settings = -- setOnExceptionResponse showError'
-               maybe defaultSettings (\p -> setPort (read p) defaultSettings) port
+  let settings = setOnExceptionResponse showError' $
+                 maybe defaultSettings (\p -> setPort (read p) defaultSettings) port
   runTLS (tlsSettings "new.cert.cert" "new.cert.key") settings $ withSession store "sess" def session $ app $ Session { sessionDbConn = db, sessionSession = session }
