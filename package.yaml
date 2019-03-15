@@ -20,6 +20,7 @@ extra-source-files:
 description:         Please see the README on GitHub at <https://github.com/Ofenhed/ReportGenerator#readme>
 
 dependencies:
+- alfred-margaret
 - base >= 4.7 && < 5
 - bytestring
 - containers

@@ -4,8 +4,8 @@
 module Heading where
 
 import qualified Data.Text as Text
-import Text.Ginger.Html (htmlSource, unsafeRawHtml, htmlSource, html)
-import Data.Maybe (fromJust)
+import Text.Ginger.Html (htmlSource, unsafeRawHtml, htmlSource, html, Html)
+import Data.Maybe (fromJust, maybe)
 import Text.Ginger (toGVal, Function, RuntimeError(ArgumentsError))
 import Text.Ginger.Run.Type (liftRun, Run, throwHere)
 import Text.Ginger.GVal (fromFunction, GVal(..))
@@ -15,7 +15,8 @@ import qualified Data.Vector as V
 import Control.Monad.IO.Class (liftIO)
 import Crypto.Hash (hash, Digest)
 import Crypto.Hash.Algorithms (SHA3_512)
-import Data.ByteString.Char8 as C8
+import qualified Data.ByteString.Char8 as C8
+import Data.Default.Class (def)
 
 chapterRefPrefix = "Chapter-ref-"
 refFinder = Text.pack . show . (hash . C8.pack . Text.unpack . (Text.append "Chapter-reference-hashed") :: Text.Text -> Digest SHA3_512)
@@ -24,10 +25,6 @@ tableOfContentPlaceholder = Text.pack $ show (hash $ C8.pack $ Text.unpack $ "Th
 type Chapter = (Maybe Text.Text, (Text.Text, Text.Text)) -- (ref, chapter, title)
 
 type IOHeading = IORef Heading
-
--- data HtmlWithReference = HtmlWithReference Html
--- instance ToGVal m (HtmlWithReference) where
---   toGVal x = HtmlWithReference 
 
 data Heading = Heading { headingCounter :: V.Vector Integer,
                          headingKnown :: V.Vector Chapter,
@@ -77,17 +74,12 @@ createRef state [(Nothing, name)] = do
                     , name')
   return $ toGVal $ unsafeRawHtml $ Text.concat $ ["<a href='#", htmlSource $ asHtml name, "'>", refFinder name'', "</a>"]
 
-finalizeRefs state !t = do
+finalizeRefs state = do
   heading <- readIORef state
-  let modifier =  \text ref ->
-        case (text, V.find (\(other_ref, (chp, _)) -> case other_ref of Just other_ref' -> other_ref' == ref ; _ -> False) $ headingKnown heading) of
-           (Left err, _) -> Left err
-           (Right text', Just (_, (chp, _))) -> Right $ Text.replace (refFinder ref) chp text'
-           (Right _, Nothing) -> Left $ Text.concat ["Could not find reference ", ref]
-           
-  return $ V.foldl modifier (Right t) $ headingRefsUsed heading
+  return $ V.toList $ flip V.map (headingRefsUsed heading) $ \x -> case V.find (\(otherRef, _) -> maybe False ((==)x) otherRef) $ headingKnown heading of
+                                                                     Just (_, (chp, _)) -> (refFinder x, chp)
 
-finalizeTableOfContents state !t = do
+finalizeTableOfContents state = do
   heading <- readIORef state
   let toc_line ref@(_, (chp, title)) = Text.concat ["<a href='#", htmlSource $ html $ createHeadingRef ref, "' "
                                                    ,"class='level_", Text.pack $ show $ 1 + Text.count "." chp, "'>"
@@ -98,10 +90,10 @@ finalizeTableOfContents state !t = do
                                   $ headingKnown heading
       table_of_contents' = Text.append table_of_contents "</div>"
       needle = tableOfContentPlaceholder
-      (before, at_needle) = Text.breakOn needle t
-  return $ if Text.length at_needle > 0
-              then Text.concat [before, table_of_contents', Text.drop (Text.length needle) at_needle]
-              else before
+  return (needle, table_of_contents')
+  -- return $ if Text.length at_needle > 0
+  --             then Text.concat [before, table_of_contents', Text.drop (Text.length needle) at_needle]
+  --             else before
 
 createHeading :: IORef Heading -> Function (Run p IO h)
 createHeading state ((Nothing, level):(Nothing, title):rest) = do

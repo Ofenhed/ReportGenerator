@@ -19,6 +19,8 @@ import Data.List (isPrefixOf, foldl')
 import Database.SQLite.Simple (Connection)
 import qualified Data.DList                     as D
 import qualified Data.Text.IO                   as TextIO
+import Data.Text.AhoCorasick.Automaton (CaseSensitivity(CaseSensitive))
+import qualified Data.Text.AhoCorasick.Replacer as Replacer
 
 import Debug.Trace
 
@@ -59,9 +61,12 @@ render conn report = do
       case result of
         Right _ -> do
                    vec' <- readIORef vec
-                   let h = foldl' (\l r -> Text.append l $ htmlSource r) Text.empty vec'
-                   finalized <- finalizeRefs headerState h
-                   case finalized of
-                     Right h -> finalizeTableOfContents headerState h >>= return
-                     Left err -> return $ Text.concat ["Error: ", err]
+                   finalized <- finalizeRefs headerState
+                   toc <- finalizeTableOfContents headerState
+                   let replacer = Replacer.build CaseSensitive $ toc:finalized
+                   let h = foldl' (\l r -> Text.append l $ Replacer.run replacer (htmlSource r)) Text.empty vec'
+                   return h
+                   --case finalized of
+                   --  Right h -> finalizeTableOfContents headerState h >>= return
+                   --  Left err -> return $ Text.concat ["Error: ", err]
         Left err -> return $ Text.concat ["Error: ", runtimeErrorMessage err]
