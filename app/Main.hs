@@ -63,6 +63,7 @@ app sess req f = do
 
     -- ("GET", ["report"]) -> call $ showReport
     ("GET", ["template"], Just _) -> call $ listTemplates
+    ("GET", ["template", id], Just _) -> call $ editTemplate $ (read $ Text.unpack id :: Int)
 
     _ -> f $ responseText status404 [("Content-Type", "text/plain")] "Oh, sorry, I could not find this site"
 

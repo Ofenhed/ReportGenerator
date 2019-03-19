@@ -1,4 +1,11 @@
-module Common (module Types, module Common, module TemplateFiles, module Network.HTTP.Types, def, throw) where
+module Common (module Types
+              , module Common
+              , module TemplateFiles
+              , module Network.HTTP.Types
+              , module Text.Ginger.GVal
+              , module Text.Ginger.Html
+              , module Text.Ginger
+              , def, throw) where
 
 import TemplateFiles
 import Types
@@ -7,6 +14,9 @@ import Network.Wai (Application, responseLBS, responseFile, requestMethod, pathI
 import Network.Wai.Session (withSession)
 import Data.Default.Class (def)
 import Network.HTTP.Types (status200, status404, status500)
+import Text.Ginger.GVal (toGVal, GVal(..))
+import Text.Ginger (toGVal, VarName, Run)
+import Text.Ginger.Html (Html)
 import Control.Exception (throw)
 
 import qualified Data.Text                      as Text

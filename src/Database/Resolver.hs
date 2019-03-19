@@ -14,12 +14,13 @@ import qualified Data.Map as Map
 
 import Debug.Trace
 
+templateParentName (TemplateVarParent i) = ("template", i)
+templateParentName (TemplateVarParentVar i) = ("templateVar", i)
+templateParentName (TemplateVarParentVars i) = ("templateVars", i)
+
 getVariable :: Connection -> TemplateVarParent -> Int -> IO [(Int, Maybe Int, Text.Text, Maybe Text.Text)]
 getVariable conn template parent = do
-  let (target, val) = case template of
-                        TemplateVarParent i -> ("template", i)
-                        TemplateVarParentVar i -> ("templateVar", i)
-                        TemplateVarParentVars i -> ("templateVars", i)
+  let (target, val) = templateParentName template
   query conn (Query $ Text.concat ["SELECT TemplateVar.id, ReportVar.id, TemplateVar.name, CASE WHEN ReportVar.data IS NOT NULL THEN ReportVar.data ELSE TemplateVar.data END AS data FROM TemplateVar LEFT JOIN ReportVar ON ReportVar.template == TemplateVar.id AND ReportVar.parent == ? WHERE TemplateVar.", target, " == ?"]) (parent, val)
 
 getVariables :: Connection -> TemplateVarParent -> Int -> IO [(Int, Text.Text, [(Int, Text.Text)])]
@@ -52,6 +53,9 @@ data Template = Template { templateId :: Int
 data Report = Report { reportId :: Int,
                        reportName :: Text.Text,
                        reportTemplate :: Template } deriving Show
+
+instance FromRow Template where
+  fromRow = Template <$> field <*> field <*> field <*> field <*> field <*> field
 
 instance FromRow Report where
   fromRow = Report <$> field <*> field <*> (Template <$> field <*> field <*> field <*> field <*> field <*> field)
@@ -99,3 +103,49 @@ getTemplate conn context template included = do
       includeTemplateVariables conn context name tId
       c <- readIORef context
       return $ Just v
+
+-- Editor
+
+getTemplates :: Connection -> IO [Template]
+getTemplates conn = query_ conn "SELECT * FROM Template" :: IO [Template]
+
+type TemplateVarTree = ([TemplateVars], [TemplateVar])
+data TemplateVars = TemplateVars { templateVarsId :: Int
+                                 , templateVarsName :: Text.Text
+                                 , templateVarsDescription :: Maybe Text.Text
+                                 , templateVarsChildren :: TemplateVarTree } deriving Show
+
+data TemplateVar = TemplateVar { templateVarId :: Int
+                               , templateVarName :: Text.Text
+                               , templateVarDescription :: Maybe Text.Text
+                               , templateVarDefault :: Maybe Text.Text
+                               , templateVarChildren :: TemplateVarTree } deriving Show
+
+getTemplateAndVariables :: Connection -> Int -> IO (Maybe (Template, TemplateVarTree))
+getTemplateAndVariables conn id = do
+  template <- query conn "SELECT * FROM Template WHERE Template.id == ?" (Only id) :: IO [Template]
+  case template of
+    [] -> return Nothing
+    [template'] -> do
+      let findVarsRecursive parent = do
+            let (target, val) = templateParentName parent
+            templateVars <- query conn (Query $ Text.concat ["SELECT id, name, description FROM TemplateVars WHERE ", target, " == ?"]) (Only val)
+            templateVar <- query conn (Query $ Text.concat ["SELECT id, name, description, data FROM TemplateVar WHERE ", target, " == ?"]) (Only val)
+            vars' <- flip mapM templateVars $ \(varsId, varsName, varsDesciption) ->
+                                                findVarsRecursive (TemplateVarParentVars varsId) >>=
+                                                  \children -> return $ TemplateVars { templateVarsId = varsId
+                                                                                     , templateVarsName = varsName
+                                                                                     , templateVarsDescription = varsDesciption
+                                                                                     , templateVarsChildren = children }
+                                                  
+            var' <- flip mapM templateVar $ \(varId, varName, varDesciption, varDefault) ->
+                                                findVarsRecursive (TemplateVarParentVar varId) >>=
+                                                  \children -> return $ TemplateVar { templateVarId = varId
+                                                                                    , templateVarName = varName
+                                                                                    , templateVarDescription = varDesciption
+                                                                                    , templateVarDefault = varDefault
+                                                                                    , templateVarChildren = children }
+            return (vars', var')
+      vars <- findVarsRecursive $ TemplateVarParent $ templateId template'
+      return $ Just (template', vars)
+      
