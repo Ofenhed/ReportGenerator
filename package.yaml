@@ -32,6 +32,7 @@ dependencies:
 - ginger
 - http-types
 - mtl
+- random
 - sqlite-simple
 - text
 - template-haskell

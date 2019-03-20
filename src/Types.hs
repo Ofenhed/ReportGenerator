@@ -1,11 +1,9 @@
 {-# LANGUAGE OverloadedStrings, FlexibleInstances, MultiParamTypeClasses #-}
-module Types where
+module Types (ReportVar(..), ReportContext(..), IOReportContext(..), TemplateVarParent(..), VisibleError(..), Connection, throw) where
 
-import qualified Network.Wai.Session as S
 import Database.SQLite.Simple (Connection)
 import qualified Data.Text as Text
-import qualified Data.Vault.Lazy                as Vault
-import Control.Exception (Exception(..))
+import Control.Exception (Exception(..), throw)
 import Data.Maybe (isNothing, fromMaybe)
 import Text.Ginger.GVal (ToGVal(..), asHtml, asText, isNull, asList, asLookup)
 import qualified Data.Map as Map
@@ -39,9 +37,6 @@ type IOReportContext = IORef ReportContext
 data TemplateVarParent = TemplateVarParent Int
                        | TemplateVarParentVar Int
                        | TemplateVarParentVars Int deriving Show
-
-data SessionType = Session { sessionDbConn :: Connection
-                           , sessionSession :: Vault.Key (S.Session IO Text.Text Text.Text) }
 
 data VisibleError = VisibleError Text.Text deriving Show
 instance Exception VisibleError

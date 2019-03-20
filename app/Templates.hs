@@ -5,11 +5,16 @@ module Templates where
 
 import Common
 import Database.Resolver
+import Database.Writer
+import Database.Types
+import Csrf
+import Redirect
 
 import Text.Ginger.GVal (toGVal, ToGVal(..), dict)
 import Text.Ginger.Run (liftRun, runtimeErrorMessage)
 import qualified Data.Map as Map
 import qualified Data.Text as Text
+import Data.Maybe (isJust)
 
 instance ToGVal m (Map.Map Text.Text (GVal m)) where
   toGVal xs = def { asLookup = Just $ flip Map.lookup xs
@@ -48,7 +53,8 @@ listTemplates context req f = do
     Left _ -> throw $ VisibleError "Could not generate webpage"
     Right t -> f $ responseText status200 [("Content-Type", "text/html")] $ t
     
-editTemplate id context req f = do
+editTemplate :: Int -> CsrfFormApplication
+editTemplate id csrf context req f = do
   tempAndVars <- getTemplateAndVariables (sessionDbConn context) id
   case tempAndVars of
     Nothing -> throw $ VisibleError "Could not find template"
@@ -57,9 +63,22 @@ editTemplate id context req f = do
           lookup name = case name of
                           "template" -> return $ toGVal template
                           "variables" -> return $ toGVal variables
+                          "csrf" -> return $ toGVal csrf
                           _ -> return $ def
       result <- runTemplate "edit_template" lookup
       case result of
         Left e -> throw $ VisibleError $ Text.concat ["Could not generate webpage: ", Text.pack e]
         Right t -> f $ responseText status200 [("Content-Type", "text/html")] $ t
     
+saveTemplate :: Int -> CsrfVerifiedApplication
+saveTemplate id (params, _) context req f = do
+  _ <- flip (changeTemplate $ sessionDbConn context) id $ \t ->
+               case t of
+                 Nothing -> (Nothing, False)
+                 Just t -> (Just $ t { templateIncludable = case lookup "includable" params of
+                                                              Just s -> read (Text.unpack s) :: Int
+                                                              Nothing -> templateIncludable t
+                                     , templateSource = case lookup "source" params of
+                                                          Just s -> s
+                                                          Nothing -> templateSource t }, True)
+  redirectSame req f

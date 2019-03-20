@@ -7,6 +7,7 @@ import ReportGenerator
 import Types
 import Templates
 import Common
+import Csrf
 
 import Network.Wai (Application, responseLBS, responseFile, requestMethod, pathInfo, Response)
 import Network.Wai.Session (withSession)
@@ -29,6 +30,8 @@ import qualified Data.Text.IO                   as TextIO
 import qualified Database.SQLite.Simple         as DB
 import qualified Data.ByteString.Lazy.Char8     as LC8
 import qualified Data.ByteString.Char8          as C8
+
+import Debug.Trace
 
 staticDir = "static"
 serverDir = "static/server"
@@ -63,14 +66,15 @@ app sess req f = do
 
     -- ("GET", ["report"]) -> call $ showReport
     ("GET", ["template"], Just _) -> call $ listTemplates
-    ("GET", ["template", id], Just _) -> call $ editTemplate $ (read $ Text.unpack id :: Int)
+    ("GET", ["template", id], Just _) -> call $ withCsrf $ editTemplate $ (read $ Text.unpack id :: Int)
+    ("POST", ["template", id], Just _) -> call $ verifyCsrf $ saveTemplate $ (read $ Text.unpack id :: Int)
 
     _ -> f $ responseText status404 [("Content-Type", "text/plain")] "Oh, sorry, I could not find this site"
 
 showError' :: SomeException -> Response
-showError' e = case fromException e
-                 of (Just (VisibleError msg)) -> responseLBS status500 [("Content-Type", "text/plain")] $ LC8.concat ["Error: ", LC8.pack $ Text.unpack msg]
-                    _ -> responseLBS status500 [("Content-Type", "text/plain")] "Something went screwy, and before you knew he was trying to kill everyone."
+showError' e = case trace "Evaluating" $ fromException e of
+                 (Just (VisibleError msg)) -> responseLBS status500 [("Content-Type", "text/plain")] $ LC8.concat ["Error: ", LC8.pack $ Text.unpack msg]
+                 _ -> responseLBS status500 [("Content-Type", "text/plain")] "Something went screwy, and before you knew he was trying to kill everyone."
 
 main = do
   session <- Vault.newKey

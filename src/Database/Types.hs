@@ -11,6 +11,24 @@ import Database.SQLite.Simple.ToRow
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Encoding
 
+data Template = Template { templateId :: Int
+                         , templateIncludeName :: Text.Text
+                         , templateLongName :: Maybe Text.Text
+                         , templateDescription :: Maybe Text.Text
+                         , templateSource :: Text.Text
+                         , templateIncludable :: Int } deriving Show
+
+data Report = Report { reportId :: Int,
+                       reportName :: Text.Text,
+                       reportTemplate :: Template } deriving Show
+
+instance FromRow Template where
+  fromRow = Template <$> field <*> field <*> field <*> field <*> field <*> field
+
+instance FromRow Report where
+  fromRow = Report <$> field <*> field <*> (Template <$> field <*> field <*> field <*> field <*> field <*> field)
+
+
 setupDatabase conn = withTransaction conn $ do
     execute_ conn "CREATE TABLE IF NOT EXISTS Template (id INTEGER PRIMARY KEY ASC, includeName TEXT NOT NULL, longName TEXT NULL, description TEXT NULL, source TEXT NOT NULL, includable INTEGER NOT NULL, CONSTRAINT unique_name UNIQUE (includeName));"
     let templateVarRelation = "FOREIGN KEY (template) REFERENCES Template(id), FOREIGN KEY (templateVar) REFERENCES TemplateVar(id), FOREIGN KEY (templateVars) REFERENCES TemplateVars(id) \

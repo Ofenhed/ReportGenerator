@@ -43,23 +43,6 @@ getValue conn report var = do
 getValues conn report var = do
   query conn "SELECT * FROM ReportVars WHERE report == ? AND parent == ?" (report, var)
 
-data Template = Template { templateId :: Int
-                         , templateIncludeName :: Text.Text
-                         , templateLongName :: Maybe Text.Text
-                         , templateDescription :: Maybe Text.Text
-                         , templateSource :: Text.Text
-                         , templateIncludable :: Int } deriving Show
-
-data Report = Report { reportId :: Int,
-                       reportName :: Text.Text,
-                       reportTemplate :: Template } deriving Show
-
-instance FromRow Template where
-  fromRow = Template <$> field <*> field <*> field <*> field <*> field <*> field
-
-instance FromRow Report where
-  fromRow = Report <$> field <*> field <*> (Template <$> field <*> field <*> field <*> field <*> field <*> field)
-
 getReport :: Connection -> Int -> IO (Maybe (Report, IOReportContext))
 getReport conn reportId = do
   var <- query conn "SELECT Report.id, Report.name, Template.* FROM Report LEFT JOIN Template ON Report.template == Template.id WHERE Report.id = ?" (Only reportId)

@@ -2,6 +2,7 @@
 module ReportGenerator where
 
 import Database.Resolver
+import Database.Types
 import Heading
 import Types
 
