@@ -27,6 +27,7 @@ instance ToGVal m Template where
                     ,("longName", toGVal $ templateLongName t)
                     ,("description", toGVal $ templateDescription t)
                     ,("source", toGVal $ templateSource t)
+                    ,("editor", toGVal $ templateEditor t)
                     ,("includable", toGVal $ templateIncludable t)]
 
 instance ToGVal m TemplateVars where
@@ -80,5 +81,8 @@ saveTemplate id (params, _) context req f = do
                                                               Nothing -> templateIncludable t
                                      , templateSource = case lookup "source" params of
                                                           Just s -> s
-                                                          Nothing -> templateSource t }, True)
+                                                          Nothing -> templateSource t
+                                     , templateEditor = case lookup "editor" params of
+                                                          Just s -> s
+                                                          Nothing -> templateEditor t }, True)
   redirectSame req f

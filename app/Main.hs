@@ -4,6 +4,7 @@
 
 import Database.Database
 import ReportGenerator
+import ReportEditor
 import Types
 import Templates
 import Common
@@ -14,6 +15,7 @@ import Network.Wai.Session (withSession)
 import Network.Wai.Session.Map (mapStore_)
 import Network.Wai.Handler.Warp (defaultSettings, setPort, setOnExceptionResponse)
 import Network.Wai.Handler.WarpTLS (runTLS, tlsSettings)
+import Web.Cookie (SetCookie(setCookieSecure, setCookieHttpOnly))
 import Data.Default.Class
 import Network.HTTP.Types (status200, status404, status500)
 import Data.Maybe (fromJust)
@@ -64,10 +66,13 @@ app sess req f = do
     -- ("GET", ["tests", "delete", id]) -> call $ withCsrf $ removeTest (read (Text.unpack id) :: Int)
     -- ("POST", ["tests", "delete", id]) -> call $ verifyCsrf $ doRemoveTest (read (Text.unpack id) :: Int)
 
-    -- ("GET", ["report"]) -> call $ showReport
+    ("GET", ["report"], Just _) -> call $ listReports
+    ("GET", ["report", id], Just _) -> call $ withCsrf $ editReport (read $ Text.unpack id :: Int)
     ("GET", ["template"], Just _) -> call $ listTemplates
-    ("GET", ["template", id], Just _) -> call $ withCsrf $ editTemplate $ (read $ Text.unpack id :: Int)
-    ("POST", ["template", id], Just _) -> call $ verifyCsrf $ saveTemplate $ (read $ Text.unpack id :: Int)
+    ("GET", ["template", id], Just _) -> call $ withCsrf $ editTemplate (read $ Text.unpack id :: Int)
+    ("POST", ["template", id], Just _) -> call $ verifyCsrf $ saveTemplate (read $ Text.unpack id :: Int)
+
+    ("GET", ["report", "generate", id], Just _) -> render (sessionDbConn sess) 1 >>= \rep -> f $ responseText status200 [("Content-Type", "text/html")] rep
 
     _ -> f $ responseText status404 [("Content-Type", "text/plain")] "Oh, sorry, I could not find this site"
 
@@ -83,4 +88,4 @@ main = do
   port <- lookup "PORT" <$> getEnvironment
   let settings = setOnExceptionResponse showError' $
                  maybe defaultSettings (\p -> setPort (read p) defaultSettings) port
-  runTLS (tlsSettings "new.cert.cert" "new.cert.key") settings $ withSession store "sess" def session $ app $ Session { sessionDbConn = db, sessionSession = session }
+  runTLS (tlsSettings "new.cert.cert" "new.cert.key") settings $ withSession store "sess" (def { setCookieHttpOnly = True, setCookieSecure = True }) session $ app $ Session { sessionDbConn = db, sessionSession = session }

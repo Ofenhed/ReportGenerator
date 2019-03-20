@@ -132,3 +132,5 @@ getTemplateAndVariables conn id = do
       vars <- findVarsRecursive $ TemplateVarParent $ templateId template'
       return $ Just (template', vars)
       
+getReports :: Connection -> IO [Report]
+getReports conn = query_ conn "SELECT Report.id, Report.name, Template.* FROM Report LEFT JOIN Template ON Template.id == Report.template"

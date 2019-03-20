@@ -29,12 +29,14 @@ changeTemplate conn f id = do
                                               \, longName = :longName \
                                               \, description = :description \
                                               \, source = :source \
+                                              \, editor = :editor \
                                               \, includable = :includable \
                                               \ WHERE id== :id"
                             [":includeName" := templateIncludeName newTemplate'
                             ,":longName" := templateLongName newTemplate'
                             ,":description" := templateDescription newTemplate'
                             ,":source" := templateSource newTemplate'
+                            ,":editor" := templateEditor newTemplate'
                             ,":includable" := templateIncludable newTemplate'
                             ,":id" := id]
           return ret

@@ -16,6 +16,7 @@ data Template = Template { templateId :: Int
                          , templateLongName :: Maybe Text.Text
                          , templateDescription :: Maybe Text.Text
                          , templateSource :: Text.Text
+                         , templateEditor :: Text.Text
                          , templateIncludable :: Int } deriving Show
 
 data Report = Report { reportId :: Int,
@@ -23,14 +24,14 @@ data Report = Report { reportId :: Int,
                        reportTemplate :: Template } deriving Show
 
 instance FromRow Template where
-  fromRow = Template <$> field <*> field <*> field <*> field <*> field <*> field
+  fromRow = Template <$> field <*> field <*> field <*> field <*> field <*> field <*> field
 
 instance FromRow Report where
-  fromRow = Report <$> field <*> field <*> (Template <$> field <*> field <*> field <*> field <*> field <*> field)
+  fromRow = Report <$> field <*> field <*> (Template <$> field <*> field <*> field <*> field <*> field <*> field <*> field)
 
 
 setupDatabase conn = withTransaction conn $ do
-    execute_ conn "CREATE TABLE IF NOT EXISTS Template (id INTEGER PRIMARY KEY ASC, includeName TEXT NOT NULL, longName TEXT NULL, description TEXT NULL, source TEXT NOT NULL, includable INTEGER NOT NULL, CONSTRAINT unique_name UNIQUE (includeName));"
+    execute_ conn "CREATE TABLE IF NOT EXISTS Template (id INTEGER PRIMARY KEY ASC, includeName TEXT NOT NULL, longName TEXT NULL, description TEXT NULL, source TEXT NOT NULL, editor TEXT NOT NULL, includable INTEGER NOT NULL, CONSTRAINT unique_name UNIQUE (includeName));"
     let templateVarRelation = "FOREIGN KEY (template) REFERENCES Template(id), FOREIGN KEY (templateVar) REFERENCES TemplateVar(id), FOREIGN KEY (templateVars) REFERENCES TemplateVars(id) \
                              \, CONSTRAINT one_parent CHECK (((template, templateVars) IS (NULL, NULL) AND templateVar IS NOT NULL) OR \
                                                            \((template, templateVar) IS (NULL, NULL) AND templateVars IS NOT NULL) OR \
@@ -47,9 +48,9 @@ setupDatabase conn = withTransaction conn $ do
 
     -- Test data
 
-    execute conn "INSERT INTO Template (includeName, source, includable) VALUES ('pentest', ?, 0);" (Only $ Encoding.decodeUtf8 $(embedFile "temp/default_report.txt"))
+    execute conn "INSERT INTO Template (includeName, source, includable, editor) VALUES ('pentest', ?, 0, '');" (Only $ Encoding.decodeUtf8 $(embedFile "temp/default_report.txt"))
     tempId <- lastInsertRowId conn
-    execute conn "INSERT INTO Template (includeName, source, includable) VALUES ('exec_summary', ?, 1);" (Only $ Text.pack "{{ heading(1, 'Executive Summary') }} This is the executive summary. Stuff was {{template.exec_summary.summary}}. {{template.exec_summary.summary.explained}}")
+    execute conn "INSERT INTO Template (includeName, source, includable, editor) VALUES ('exec_summary', ?, 1, '');" (Only $ Text.pack "{{ heading(1, 'Executive Summary') }} This is the executive summary. Stuff was {{template.exec_summary.summary}}. {{template.exec_summary.summary.explained}}")
     execSum <- lastInsertRowId conn
     execute conn "INSERT INTO TemplateVar (template, name, description, type) VALUES (?, 'confidential', 'Whether this report is confidential', 'text');" (Only tempId)
     confidential <- lastInsertRowId conn
