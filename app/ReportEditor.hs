@@ -73,7 +73,7 @@ editReport id csrf context req f = do
   reportAndVars <- getReport (sessionDbConn context) id
   toSaveMvar <- newIORef $ DataFieldBuilder { fieldCheckbox = [], fieldValue = [], fieldFile = [] }
   case reportAndVars of
-    Nothing -> throw $ VisibleError "Could not find report"
+    Nothing -> throw $ VisibleErrorWithStatus status404 "Could not find report"
     Just (report, context) -> do
       let lookup :: VarName -> Run p IO Html (GVal (Run p IO Html))
           lookup name = case name of

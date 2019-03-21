@@ -58,7 +58,7 @@ editTemplate :: Int -> CsrfFormApplication
 editTemplate id csrf context req f = do
   tempAndVars <- getTemplateAndVariables (sessionDbConn context) id
   case tempAndVars of
-    Nothing -> throw $ VisibleError "Could not find template"
+    Nothing -> throw $ VisibleErrorWithStatus status404 "Could not find template"
     Just (template, variables) -> do
       let lookup :: VarName -> Run p IO Html (GVal (Run p IO Html))
           lookup name = case name of

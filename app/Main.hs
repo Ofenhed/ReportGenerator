@@ -19,7 +19,7 @@ import Network.WebSockets.Connection (defaultConnectionOptions)
 import Network.Wai.Handler.WarpTLS (runTLS, tlsSettings)
 import Web.Cookie (SetCookie(setCookieSecure, setCookieHttpOnly))
 import Data.Default.Class
-import Network.HTTP.Types (status200, status404, status500)
+import Network.HTTP.Types (status200, status404, status500, Status(statusCode))
 import Data.Maybe (fromJust, fromMaybe)
 import Control.Monad.ST (runST)
 import System.IO (openFile, IOMode(ReadMode), hGetContents)
@@ -77,7 +77,7 @@ app sess req f = do
 
     ("GET", ["report", "generate", id], Just _) -> render (sessionDbConn sess) 1 >>= \rep -> f $ responseText status200 [("Content-Type", "text/html")] rep
 
-    _ -> f $ responseText status404 [("Content-Type", "text/plain")] "Oh, sorry, I could not find this site"
+    _ -> throw $ VisibleErrorWithStatus status404 "Could not find this site."
 
 sockServer _ = return ()
 
@@ -87,12 +87,13 @@ showErrors other req f = do
   case resp of
     Right res -> return res
     Left err -> do
-      let db = case fromException err of
-                       Just (VisibleError msg) -> [("exception", toGVal msg)]
+      let (status, db) = case fromException err of
+                       Just (VisibleError msg) -> (status500, [("exception", toGVal msg), ("status", toGVal (500 :: Int))])
+                       Just (VisibleErrorWithStatus status msg) -> (status, [("exception", toGVal msg), ("status", toGVal $ statusCode status)])
                        _ -> throw err
       response <- runTemplate "exception" $ \k -> return $ fromMaybe def $ lookup k db
       case response of
-        Right response' -> f $ responseText status500 [("Content-Type", "text/html")] response'
+        Right response' -> f $ responseText status [("Content-Type", "text/html")] response'
         Left _ -> f $ responseText status500 [] "Something went screwy, and before you knew he was trying to kill everyone."
 
 main = do

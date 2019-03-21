@@ -8,6 +8,7 @@ import Text.Ginger.GVal (ToGVal(..), asHtml, asText, isNull, asList, asLookup, G
 import qualified Data.Map as Map
 import Data.IORef (IORef)
 import Data.Default.Class (def)
+import Network.HTTP.Types (Status)
 
 import Debug.Trace
 
@@ -85,5 +86,6 @@ data TemplateVarParent = TemplateVarParent Int
                        | TemplateVarParentVar Int
                        | TemplateVarParentVars Int deriving Show
 
-data VisibleError = VisibleError Text.Text deriving Show
+data VisibleError = VisibleError Text.Text
+                  | VisibleErrorWithStatus Status Text.Text deriving Show
 instance Exception VisibleError
