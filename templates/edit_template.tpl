@@ -28,7 +28,7 @@
   {%- endif -%}
 {%- endmacro %}
 
-<form method="post" enctype="multipart/form-data">
+<form method="post">
   <label for="source">Source</label><br>
   <textarea name="source">{{ template.source }}</textarea><br>
   <label for="editor">Editor</label><br>

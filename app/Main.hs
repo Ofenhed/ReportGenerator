@@ -68,6 +68,7 @@ app sess req f = do
 
     ("GET", ["report"], Just _) -> call $ listReports
     ("GET", ["report", id], Just _) -> call $ withCsrf $ editReport (read $ Text.unpack id :: Int)
+    ("POST", ["report", id], Just _) -> call $ verifyCsrf $ saveReport (read $ Text.unpack id :: Int)
     ("GET", ["template"], Just _) -> call $ listTemplates
     ("GET", ["template", id], Just _) -> call $ withCsrf $ editTemplate (read $ Text.unpack id :: Int)
     ("POST", ["template", id], Just _) -> call $ verifyCsrf $ saveTemplate (read $ Text.unpack id :: Int)

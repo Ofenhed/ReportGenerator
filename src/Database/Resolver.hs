@@ -18,10 +18,10 @@ templateParentName (TemplateVarParent i) = ("template", i)
 templateParentName (TemplateVarParentVar i) = ("templateVar", i)
 templateParentName (TemplateVarParentVars i) = ("templateVars", i)
 
-getVariable :: Connection -> TemplateVarParent -> Int -> IO [(Int, Maybe Int, Text.Text, Maybe Text.Text)]
+getVariable :: Connection -> TemplateVarParent -> Int -> IO [(Int, Int, Text.Text, Maybe Text.Text)]
 getVariable conn template parent = do
   let (target, val) = templateParentName template
-  query conn (Query $ Text.concat ["SELECT TemplateVar.id, ReportVar.id, TemplateVar.name, CASE WHEN ReportVar.data IS NOT NULL THEN ReportVar.data ELSE TemplateVar.data END AS data FROM TemplateVar LEFT JOIN ReportVar ON ReportVar.template == TemplateVar.id AND ReportVar.parent == ? WHERE TemplateVar.", target, " == ?"]) (parent, val)
+  query conn (Query $ Text.concat ["SELECT TemplateVar.id, ReportVar.id, TemplateVar.name, CASE WHEN ReportVar.data IS NOT NULL THEN ReportVar.data ELSE TemplateVar.data END AS data FROM TemplateVar INNER JOIN ReportVar ON ReportVar.template == TemplateVar.id AND ReportVar.parent == ? WHERE TemplateVar.", target, " == ?"]) (parent, val)
 
 getVariables :: Connection -> TemplateVarParent -> Int -> IO [(Int, Text.Text, [(Int, Text.Text)])]
 getVariables conn template parent = do
@@ -57,23 +57,25 @@ getReport conn reportId = do
 
 includeTemplateVariables conn context key template = do
   context' <- readIORef context
-  let findVariablesRecursive from parent = do
+  let findVariablesRecursive from parent path = do
         var <- getVariable conn from parent
         var' <- flip mapM var $ \(tempId, varId, name, d) -> do
             -- vars <- getVariables conn from
-            otherVar <- case varId of Just varId' -> findVariablesRecursive (TemplateVarParentVar tempId) varId' ; Nothing -> return Map.empty
+            let path' = path ++ [IndexVal varId]
+            otherVar <- findVariablesRecursive (TemplateVarParentVar tempId) varId path'
             -- otherVars <- mapM (findVariablesRecursive . TemplateVarParentVars) vars
-            return $ (name, ReportVar { reportVarVariables = otherVar, reportVarValue = d, reportVarArray = [] })
+            return $ (name, ReportVar { reportVarVariables = otherVar, reportVarValue = Just (path', d), reportVarArray = Nothing })
         vars <- getVariables conn from parent
         vars' <- flip mapM vars $ \(tempId, name, v) -> do
             v' <- flip mapM v $ \(rId, val) -> do
-                others <- findVariablesRecursive (TemplateVarParentVars tempId) rId
-                return $ ReportVar { reportVarVariables = others, reportVarValue = Just val, reportVarArray = [] }
-            return (name, ReportVar { reportVarVariables = Map.empty, reportVarValue = Nothing, reportVarArray = v' })
+                let path' = path ++ [IndexArr rId]
+                others <- findVariablesRecursive (TemplateVarParentVars tempId) rId path'
+                return $ ReportVar { reportVarVariables = others, reportVarValue = Just (path', Just val), reportVarArray = Nothing }
+            return (name, ReportVar { reportVarVariables = Map.empty, reportVarValue = Nothing, reportVarArray = Just (path, v') })
         let merged = Map.unionWith (\var vars -> var { reportVarArray = reportVarArray vars }) (Map.fromList var') (Map.fromList vars')
         return merged
-  vars <- findVariablesRecursive (TemplateVarParent template) (reportContextId context')
-  atomicModifyIORef' context $ \c -> (c { reportContextVariable = Map.insert key (ReportVar { reportVarVariables = vars, reportVarValue = Nothing, reportVarArray = []}) (reportContextVariable c) }, ())
+  vars <- findVariablesRecursive (TemplateVarParent template) (reportContextId context') []
+  atomicModifyIORef' context $ \c -> (c { reportContextVariable = Map.insert key (ReportVar { reportVarVariables = vars, reportVarValue = Nothing, reportVarArray = Nothing}) (reportContextVariable c) }, ())
 
 getTemplate :: Connection -> IOReportContext -> Text.Text -> Bool -> IO (Maybe Text.Text)
 getTemplate conn context template included = do
