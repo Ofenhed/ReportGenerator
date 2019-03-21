@@ -18,10 +18,10 @@ templateParentName (TemplateVarParent i) = ("template", i)
 templateParentName (TemplateVarParentVar i) = ("templateVar", i)
 templateParentName (TemplateVarParentVars i) = ("templateVars", i)
 
-getVariable :: Connection -> TemplateVarParent -> Int -> IO [(Int, Int, Text.Text, Maybe Text.Text)]
+getVariable :: Connection -> TemplateVarParent -> Int -> IO [(Int, Maybe Int, Text.Text, Maybe Text.Text)]
 getVariable conn template parent = do
   let (target, val) = templateParentName template
-  query conn (Query $ Text.concat ["SELECT TemplateVar.id, ReportVar.id, TemplateVar.name, CASE WHEN ReportVar.data IS NOT NULL THEN ReportVar.data ELSE TemplateVar.data END AS data FROM TemplateVar INNER JOIN ReportVar ON ReportVar.template == TemplateVar.id AND ReportVar.parent == ? WHERE TemplateVar.", target, " == ?"]) (parent, val)
+  query conn (Query $ Text.concat ["SELECT TemplateVar.id, ReportVar.id, TemplateVar.name, CASE WHEN ReportVar.data IS NOT NULL THEN ReportVar.data ELSE TemplateVar.data END AS data FROM TemplateVar LEFT JOIN ReportVar ON ReportVar.template == TemplateVar.id AND ReportVar.parent == ? WHERE TemplateVar.", target, " == ?"]) (parent, val)
 
 getVariables :: Connection -> TemplateVarParent -> Int -> IO [(Int, Text.Text, [(Int, Text.Text)])]
 getVariables conn template parent = do
@@ -61,8 +61,8 @@ includeTemplateVariables conn context key template = do
         var <- getVariable conn from parent
         var' <- flip mapM var $ \(tempId, varId, name, d) -> do
             -- vars <- getVariables conn from
-            let path' = path ++ [IndexVal varId]
-            otherVar <- findVariablesRecursive (TemplateVarParentVar tempId) varId path'
+            let path' = path ++ [case varId of Just varId' -> IndexVal varId' ; Nothing -> IndexTempVar tempId]
+            otherVar <- case varId of Nothing -> return $ Map.empty ; Just varId' -> findVariablesRecursive (TemplateVarParentVar tempId) varId' path'
             -- otherVars <- mapM (findVariablesRecursive . TemplateVarParentVars) vars
             return $ (name, ReportVar { reportVarVariables = otherVar, reportVarValue = Just (path', d), reportVarArray = Nothing })
         vars <- getVariables conn from parent
@@ -71,7 +71,7 @@ includeTemplateVariables conn context key template = do
                 let path' = path ++ [IndexArr rId]
                 others <- findVariablesRecursive (TemplateVarParentVars tempId) rId path'
                 return $ ReportVar { reportVarVariables = others, reportVarValue = Just (path', Just val), reportVarArray = Nothing }
-            return (name, ReportVar { reportVarVariables = Map.empty, reportVarValue = Nothing, reportVarArray = Just (path, v') })
+            return (name, ReportVar { reportVarVariables = Map.empty, reportVarValue = Nothing, reportVarArray = Just (path ++ [IndexTempVars tempId], v') })
         let merged = Map.unionWith (\var vars -> var { reportVarArray = reportVarArray vars }) (Map.fromList var') (Map.fromList vars')
         return merged
   vars <- findVariablesRecursive (TemplateVarParent template) (reportContextId context') []

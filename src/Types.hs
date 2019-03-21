@@ -1,9 +1,9 @@
 {-# LANGUAGE OverloadedStrings, FlexibleInstances, MultiParamTypeClasses, FlexibleContexts, AllowAmbiguousTypes #-}
-module Types (ReportVar(..), ReportContext(..), IOReportContext(..), TemplateVarParent(..), VisibleError(..), Connection, throw, IndexType(..), IndexedReportVar(..)) where 
+module Types (ReportVar(..), ReportContext(..), IOReportContext(..), TemplateVarParent(..), VisibleError(..), Connection, throw, IndexType(..), IndexedReportVar(..), IndexPathType(..)) where 
 import Database.SQLite.Simple (Connection)
 import qualified Data.Text as Text
 import Control.Exception (Exception(..), throw)
-import Data.Maybe (isNothing, fromMaybe)
+import Data.Maybe (isNothing, fromMaybe, mapMaybe)
 import Text.Ginger.GVal (ToGVal(..), asHtml, asText, isNull, asList, asLookup, GVal(..))
 import qualified Data.Map as Map
 import Data.IORef (IORef)
@@ -12,21 +12,41 @@ import Data.Default.Class (def)
 import Debug.Trace
 
 data IndexType = IndexVal Int
-               | IndexArr Int deriving Show
+               | IndexArr Int
+               | IndexTempVar Int
+               | IndexTempVars Int
+type IndexPathType = [IndexType]
 
-data ReportVar = ReportVar { reportVarValue :: Maybe ([IndexType], Maybe Text.Text)
+instance {-# OVERLAPPING #-} Show IndexPathType where
+  show = flip foldl [] $ \x i -> x ++ case i of
+                                        IndexVal i -> "$" ++ show i
+                                        IndexArr i -> "[" ++ show i
+                                        IndexTempVar i -> "!" ++ show i
+                                        IndexTempVars i -> "{" ++ show i
+
+instance {-# OVERLAPPING #-} Read IndexPathType where
+  readsPrec l [] = [([], [])]
+  readsPrec l (t:d) = concat $ flip map (readsPrec l d) $
+                        \(val, rest) -> flip mapMaybe (readsPrec l rest) $
+                                          \(otherVals, rest') -> let idx = createIndex t val
+                                                                   in case idx of
+                                                                        Just idx' -> Just ((idx':otherVals), rest')
+                                                                        Nothing -> Nothing
+    where
+    createIndex '$' i = Just $ IndexVal i
+    createIndex '[' i = Just $ IndexArr i
+    createIndex '!' i = Just $ IndexTempVar i
+    createIndex '{' i = Just $ IndexTempVars i
+    createIndex _ _ = Nothing
+
+data ReportVar = ReportVar { reportVarValue :: Maybe (IndexPathType, Maybe Text.Text)
                            , reportVarVariables :: Map.Map Text.Text ReportVar
-                           , reportVarArray :: Maybe ([IndexType], [ReportVar]) } deriving Show
+                           , reportVarArray :: Maybe (IndexPathType, [ReportVar]) } deriving Show
 
 data IndexedReportVar = IndexedReportVar ReportVar deriving Show
 
 instance {-# OVERLAPPING #-} ToGVal m [IndexType] where
-  toGVal xs = let val = foldl (\x i -> let before = if x == [] then x else x ++ "."
-                                         in before ++ case i of
-                                                        IndexVal i -> show i
-                                                        IndexArr i -> "[" ++ show i)
-                              [] xs
-                in toGVal val 
+  toGVal = toGVal . show
 
 lookupGVal lookup stack = def { isNull = False
                               , asLookup = Just $ flip lookup stack }
