@@ -43,7 +43,7 @@ listReports context req f = do
     Right t -> f $ responseText status200 [("Content-Type", "text/html")] $ t
 
 data TemplateDataFields = DataFieldBuilder { fieldCheckbox :: [Text.Text],
-                                             fieldText :: [Text.Text],
+                                             fieldValue :: [Text.Text],
                                              fieldFile :: [Text.Text] }
                         | DataFieldAlreadyUsed deriving (Show, Read)
 
@@ -52,7 +52,7 @@ dataFieldModifier ref func = do
                               [(_, value)] -> liftRun $ atomicModifyIORef' ref $ \ref -> (modifier ref $ asText value, value)
                               _ -> throw $ VisibleError $ Text.concat ["Incorrect use of function ", func]
   case func of
-    "add_text" -> return $ fromFunction $ modify (\d v -> d { fieldText = v:fieldText d })
+    "add_value" -> return $ fromFunction $ modify (\d v -> d { fieldValue = v:fieldValue d })
     "add_checkbox" -> return $ fromFunction $ modify (\d v -> d { fieldCheckbox = v:fieldCheckbox d })
     "add_file" -> return $ fromFunction $ modify (\d v -> d { fieldFile = v:fieldFile d })
 
@@ -60,7 +60,7 @@ dataFieldModifier ref func = do
                                   key <- liftRun $ atomicModifyIORef' ref $
                                                      \ref -> case ref of
                                                                var@DataFieldBuilder { fieldCheckbox = cb
-                                                                                , fieldText = tb
+                                                                                , fieldValue = tb
                                                                                 , fieldFile = fs } -> (DataFieldAlreadyUsed, Just $ show var)
                                                                DataFieldAlreadyUsed -> (DataFieldAlreadyUsed, Nothing)
                                   case key of
@@ -71,9 +71,9 @@ dataFieldModifier ref func = do
 editReport :: Int -> CsrfFormApplication
 editReport id csrf context req f = do
   reportAndVars <- getReport (sessionDbConn context) id
-  toSaveMvar <- newIORef $ DataFieldBuilder { fieldCheckbox = [], fieldText = [], fieldFile = [] }
+  toSaveMvar <- newIORef $ DataFieldBuilder { fieldCheckbox = [], fieldValue = [], fieldFile = [] }
   case reportAndVars of
-    Nothing -> throw $ VisibleError "Could not find template"
+    Nothing -> throw $ VisibleError "Could not find report"
     Just (report, context) -> do
       let lookup :: VarName -> Run p IO Html (GVal (Run p IO Html))
           lookup name = case name of
@@ -92,7 +92,7 @@ saveReport id (params, _) context req f = do
   variables <- case lookup "fields" params of
                  Just f -> return $ (read $ Text.unpack f :: TemplateDataFields)
                  Nothing -> throw $ VisibleError "No fields received"
-  flip mapM (fieldText variables) $ \variable -> do
+  flip mapM (fieldValue variables) $ \variable -> do
     setVariable (sessionDbConn context) id (read $ Text.unpack variable) $ lookup variable params
   flip mapM (fieldCheckbox variables) $ \variable -> do
     setVariable (sessionDbConn context) id (read $ Text.unpack variable) $ if isJust $ lookup variable params

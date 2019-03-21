@@ -10,21 +10,23 @@ import Templates
 import Common
 import Csrf
 
-import Network.Wai (Application, responseLBS, responseFile, requestMethod, pathInfo, Response)
+import Network.Wai (Application, responseLBS, responseFile, requestMethod, pathInfo, Response, Middleware)
 import Network.Wai.Session (withSession)
 import Network.Wai.Session.Map (mapStore_)
 import Network.Wai.Handler.Warp (defaultSettings, setPort, setOnExceptionResponse)
+import Network.Wai.Handler.WebSockets (websocketsOr)
+import Network.WebSockets.Connection (defaultConnectionOptions)
 import Network.Wai.Handler.WarpTLS (runTLS, tlsSettings)
 import Web.Cookie (SetCookie(setCookieSecure, setCookieHttpOnly))
 import Data.Default.Class
 import Network.HTTP.Types (status200, status404, status500)
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, fromMaybe)
 import Control.Monad.ST (runST)
 import System.IO (openFile, IOMode(ReadMode), hGetContents)
 
 import System.Environment (getEnvironment)
 -- import System.FilePath ((</>), takeFileName)
-import Control.Exception (fromException, SomeException)
+import Control.Exception (fromException, SomeException, try)
 
 import qualified Data.Vault.Lazy                as Vault
 import qualified Data.Text                      as Text
@@ -77,16 +79,29 @@ app sess req f = do
 
     _ -> f $ responseText status404 [("Content-Type", "text/plain")] "Oh, sorry, I could not find this site"
 
-showError' :: SomeException -> Response
-showError' e = case trace "Evaluating" $ fromException e of
-                 (Just (VisibleError msg)) -> responseLBS status500 [("Content-Type", "text/plain")] $ LC8.concat ["Error: ", LC8.pack $ Text.unpack msg]
-                 _ -> responseLBS status500 [("Content-Type", "text/plain")] "Something went screwy, and before you knew he was trying to kill everyone."
+sockServer _ = return ()
+
+showErrors :: Middleware
+showErrors other req f = do
+  resp <- try (other req f)
+  case resp of
+    Right res -> return res
+    Left err -> do
+      let db = case fromException err of
+                       Just (VisibleError msg) -> [("exception", toGVal msg)]
+                       _ -> throw err
+      response <- runTemplate "exception" $ \k -> return $ fromMaybe def $ lookup k db
+      case response of
+        Right response' -> f $ responseText status500 [("Content-Type", "text/html")] response'
+        Left _ -> f $ responseText status500 [] "Something went screwy, and before you knew he was trying to kill everyone."
 
 main = do
   session <- Vault.newKey
   store <- mapStore_
   db <- openDatabase
   port <- lookup "PORT" <$> getEnvironment
-  let settings = setOnExceptionResponse showError' $
-                 maybe defaultSettings (\p -> setPort (read p) defaultSettings) port
-  runTLS (tlsSettings "new.cert.cert" "new.cert.key") settings $ withSession store "sess" (def { setCookieHttpOnly = True, setCookieSecure = True }) session $ app $ Session { sessionDbConn = db, sessionSession = session }
+  let settings = maybe defaultSettings (\p -> setPort (read p) defaultSettings) port
+  runTLS (tlsSettings "new.cert.cert" "new.cert.key") settings $ showErrors
+                                                               $ withSession store "sess" (def { setCookieHttpOnly = True, setCookieSecure = True }) session
+                                                               $ websocketsOr defaultConnectionOptions sockServer
+                                                               $ app $ Session { sessionDbConn = db, sessionSession = session }

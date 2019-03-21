@@ -43,8 +43,10 @@ dependencies:
 - wai
 - wai-extra
 - wai-session
+- wai-websockets
 - warp
 - warp-tls
+- websockets
   # - file-embed
   # - filepath
   # - random
