@@ -89,9 +89,15 @@ editReport id csrf context req f = do
     
 saveReport :: Int -> CsrfVerifiedApplication
 saveReport id (params, _) context req f = do
-  case lookup "fields" params of
-    Just f -> throw $ VisibleError $ Text.pack $ show $ fieldText $ read $ Text.unpack f
-    Nothing -> throw $ VisibleError "No fields received"
+  variables <- case lookup "fields" params of
+                 Just f -> return $ (read $ Text.unpack f :: TemplateDataFields)
+                 Nothing -> throw $ VisibleError "No fields received"
+  flip mapM (fieldText variables) $ \variable -> do
+    setVariable (sessionDbConn context) id (read $ Text.unpack variable) $ lookup variable params
+  flip mapM (fieldCheckbox variables) $ \variable -> do
+    setVariable (sessionDbConn context) id (read $ Text.unpack variable) $ if isJust $ lookup variable params
+                                                                             then (1 :: Int)
+                                                                             else 0
   -- _ <- flip (changeTemplate $ sessionDbConn context) id $ \t ->
   --              case t of
   --                Nothing -> (Nothing, False)

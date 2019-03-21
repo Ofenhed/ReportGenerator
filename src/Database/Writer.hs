@@ -7,6 +7,8 @@ import Types
 import Database.SQLite.Simple
 import Database.SQLite.Simple.FromRow
 import Database.SQLite.Simple.ToRow
+import Database.SQLite.Simple.ToField
+import Database.SQLite.Simple.FromField
 import Data.IORef (newIORef, readIORef, atomicModifyIORef')
 
 import qualified Data.Text as Text
@@ -42,3 +44,23 @@ changeTemplate conn f id = do
           return ret
         
     _ -> return ret
+
+setVariable :: (FromField a, ToField a) => Connection -> Int -> IndexPathType -> a -> IO Bool
+setVariable conn report path value = do
+  case take 2 $ reverse path of
+    [IndexTempVar i] -> do v <- query conn "SELECT data == ? FROM TemplateVar WHERE id = ?" (value, i)
+                           case v of
+                             [Only False] -> execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, ?)" (i, report, value)
+                             _ -> return ()
+                           return True
+    [IndexVal i] -> do execute conn "UPDATE ReportVar SET data = ? WHERE id = ? AND parent = ?" (value, i, report)
+                       return True
+    [IndexVal i, IndexVal parent] -> do execute conn "UPDATE ReportVar SET data = ? WHERE id = ? AND parent = ?" (value, i, parent)
+                                        return True
+    [IndexVal i, IndexArr parent] -> do execute conn "UPDATE ReportVar SET data = ? WHERE id = ? AND parent = ?" (value, i, parent)
+                                        return True
+    [IndexArr i, IndexArr parent] -> do execute conn "UPDATE ReportVars SET data = ? WHERE id = ? AND parent = ?" (value, i, parent)
+                                        return True
+    [IndexArr i, IndexVal parent] -> do execute conn "UPDATE ReportVars SET data = ? WHERE id = ? AND parent = ?" (value, i, parent)
+                                        return True
+    _ -> return False

@@ -48,13 +48,13 @@ setupDatabase conn = withTransaction conn $ do
 
     -- Test data
 
-    execute conn "INSERT INTO Template (includeName, source, includable, editor) VALUES ('pentest', ?, 0, '');" (Only $ Encoding.decodeUtf8 $(embedFile "temp/default_report.txt"))
+    execute conn "INSERT INTO Template (includeName, source, includable, editor) VALUES ('pentest', ?, 0, ?);" (Encoding.decodeUtf8 $(embedFile "temp/default_report.txt"), Encoding.decodeUtf8 $(embedFile "temp/pentest_editor.txt"))
     tempId <- lastInsertRowId conn
     execute conn "INSERT INTO Template (includeName, source, includable, editor) VALUES ('exec_summary', ?, 1, '');" (Only $ Text.pack "{{ heading(1, 'Executive Summary') }} This is the executive summary. Stuff was {{template.exec_summary.summary}}. {{template.exec_summary.summary.explained}}")
     execSum <- lastInsertRowId conn
     execute conn "INSERT INTO TemplateVar (template, name, description, type) VALUES (?, 'confidential', 'Whether this report is confidential', 'text');" (Only tempId)
     confidential <- lastInsertRowId conn
-    execute conn "INSERT INTO TemplateVar (template, name, description, type) VALUES (?, 'customer', 'The name of the customer', 'text');" (Only tempId)
+    execute conn "INSERT INTO TemplateVar (template, name, description, type, data) VALUES (?, 'customer', 'The name of the customer', 'text', 'Secret Customer');" (Only tempId)
     custId <- lastInsertRowId conn
     execute conn "INSERT INTO TemplateVar (template, name, description, type) VALUES (?, 'customer_address', 'The address of the customer', 'text');" (Only tempId)
     cust2Id <- lastInsertRowId conn
@@ -70,7 +70,6 @@ setupDatabase conn = withTransaction conn $ do
     emailId <- lastInsertRowId conn
     execute conn "INSERT INTO Report (template, name) VALUES (?, 'Some customer')" (Only tempId)
     reportId <- lastInsertRowId conn
-    execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, 'Super Important Customer #1');" (custId, reportId)
     execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, '1');" (confidential, reportId)
     execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, 'Super Important Customer Street');" (cust2Id, reportId)
     execute conn "INSERT INTO ReportVars (template, parent, data, weight) VALUES (?, ?, 'Marcus Ofenhed', 1);" (peopleId, reportId)
