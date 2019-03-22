@@ -1,11 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Csrf (withCsrf, verifyCsrf, CsrfFormApplication, CsrfVerifiedApplication) where
+module Csrf (withCsrf, verifyCsrf, CsrfFormApplication, CsrfVerifiedApplication, FileInfo(..)) where
 
 -- import Types
 import Common
 
 import Network.Wai (vault)
-import Network.Wai.Parse (parseRequestBody, lbsBackEnd, File)
+import Network.Wai.Parse (parseRequestBody, lbsBackEnd, File, FileInfo(..))
 import Data.Maybe (mapMaybe)
 import Control.Exception (throw)
 import qualified Data.Vault.Lazy as Vault

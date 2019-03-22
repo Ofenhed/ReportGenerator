@@ -15,7 +15,10 @@ import Text.Ginger.Run (liftRun, runtimeErrorMessage)
 import Data.IORef (newIORef, readIORef, atomicModifyIORef')
 import qualified Data.Map as Map
 import qualified Data.Text as Text
+import qualified Data.Text.Encoding as Encoding
 import Data.Maybe (isJust)
+import qualified Data.ByteString.Lazy.Char8 as LC8
+import qualified Data.ByteString.Char8      as C8
 
 import Debug.Trace
 
@@ -88,7 +91,7 @@ editReport id csrf context req f = do
         Right t -> f $ responseText status200 [("Content-Type", "text/html")] $ t
     
 saveReport :: Int -> CsrfVerifiedApplication
-saveReport id (params, _) context req f = do
+saveReport id (params, files) context req f = do
   variables <- case lookup "fields" params of
                  Just f -> return $ (read $ Text.unpack f :: TemplateDataFields)
                  Nothing -> throw $ VisibleError "No fields received"
@@ -98,6 +101,12 @@ saveReport id (params, _) context req f = do
     setVariable (sessionDbConn context) id (read $ Text.unpack variable) $ if isJust $ lookup variable params
                                                                              then (1 :: Int)
                                                                              else 0
+  flip mapM (fieldFile variables) $ \file -> do
+    case lookup (Encoding.encodeUtf8 file) files of
+      Just f -> if (fileName f == C8.empty || fileName f == C8.pack "\"\"") && fileContent f == LC8.empty -- Bug in Wai/Warp makes filenames contain "" when really empty
+                  then return True
+                  else setVariable (sessionDbConn context) id (read $ Text.unpack file) $ Encoding.decodeUtf8 $ LC8.toStrict $ fileContent f
+      Nothing -> return True
   -- _ <- flip (changeTemplate $ sessionDbConn context) id $ \t ->
   --              case t of
   --                Nothing -> (Nothing, False)
