@@ -52,6 +52,9 @@ setupDatabase conn = withTransaction conn $ do
     tempId <- lastInsertRowId conn
     execute conn "INSERT INTO Template (includeName, source, includable, editor) VALUES ('exec_summary', ?, 1, '');" (Only $ Text.pack "{{ heading(1, 'Executive Summary') }} This is the executive summary. Stuff was {{template.exec_summary.summary}}. {{template.exec_summary.summary.explained}}")
     execSum <- lastInsertRowId conn
+    execute conn "INSERT INTO Template (includeName, source, includable, editor) VALUES ('eval', ?, 1, '');" (Only $ Text.pack "{% macro _(e, c) -%} \
+                                                                                                     \ {{- eval(src=e, context=merge(c, {'heading': heading, 'push_heading': push_heading, 'pop_heading': pop_heading, 'ref': ref, 'report': report})) -}} \
+                                                                                                     \{%- endmacro %}")
     execute conn "INSERT INTO TemplateVar (template, name, description, type) VALUES (?, 'confidential', 'Whether this report is confidential', 'text');" (Only tempId)
     confidential <- lastInsertRowId conn
     execute conn "INSERT INTO TemplateVar (template, name, description, type, data) VALUES (?, 'customer', 'The name of the customer', 'text', 'Secret Customer');" (Only tempId)

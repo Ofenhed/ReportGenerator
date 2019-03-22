@@ -53,14 +53,11 @@ setVariable conn report path value = do
                              [Only False] -> execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, ?)" (i, report, value)
                              _ -> return ()
                            return True
-    [IndexVal i] -> do execute conn "UPDATE ReportVar SET data = ? WHERE id = ? AND parent = ?" (value, i, report)
-                       return True
-    [IndexVal i, IndexVal parent] -> do execute conn "UPDATE ReportVar SET data = ? WHERE id = ? AND parent = ?" (value, i, parent)
-                                        return True
-    [IndexVal i, IndexArr parent] -> do execute conn "UPDATE ReportVar SET data = ? WHERE id = ? AND parent = ?" (value, i, parent)
-                                        return True
-    [IndexArr i, IndexArr parent] -> do execute conn "UPDATE ReportVars SET data = ? WHERE id = ? AND parent = ?" (value, i, parent)
-                                        return True
-    [IndexArr i, IndexVal parent] -> do execute conn "UPDATE ReportVars SET data = ? WHERE id = ? AND parent = ?" (value, i, parent)
-                                        return True
+    [IndexVal i] -> execute conn "UPDATE ReportVar SET data = ? WHERE id = ? AND parent = ?" (value, i, report) >> return True
+    [IndexArr i] -> execute conn "UPDATE ReportVars SET data = ? WHERE id = ? AND parent = ?" (value, i, report) >> return True
+                       
+    [IndexVal i, IndexVal parent] -> execute conn "UPDATE ReportVar SET data = ? WHERE id = ? AND parent = ?" (value, i, parent) >> return True
+    [IndexVal i, IndexArr parent] -> execute conn "UPDATE ReportVar SET data = ? WHERE id = ? AND parent = ?" (value, i, parent) >> return True
+    [IndexArr i, IndexArr parent] -> execute conn "UPDATE ReportVars SET data = ? WHERE id = ? AND parent = ?" (value, i, parent) >> return True
+    [IndexArr i, IndexVal parent] -> execute conn "UPDATE ReportVars SET data = ? WHERE id = ? AND parent = ?" (value, i, parent) >> return True
     _ -> return False

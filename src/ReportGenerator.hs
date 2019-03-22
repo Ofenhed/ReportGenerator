@@ -5,6 +5,7 @@ import Database.Resolver
 import Database.Types
 import Heading
 import Types
+import GingerExtra
 
 import qualified Data.Text as Text
 
@@ -24,7 +25,8 @@ import qualified Data.Text.IO                   as TextIO
 import Data.Text.AhoCorasick.Automaton (CaseSensitivity(CaseSensitive))
 import qualified Data.Text.AhoCorasick.Replacer as Replacer
 import Control.Monad.Writer (execWriter, tell)
-
+import Control.DeepSeq (deepseq)
+import qualified Data.Map                       as Map
 import Debug.Trace
 
 includeResolver conn context file = do
@@ -47,8 +49,11 @@ contextLookup reportState context var = do
              "ref" -> return $ fromFunction $ createRef headerState
              "table_of_contents" -> return $ toGVal $ tableOfContentPlaceholder
              "template" -> liftRun $ readIORef context >>= return . toGVal . reportContextVariable
+             -- "extra_builtins" -> return $ toGVal $ Map.map fromFunction $ Map.fromList gingerFunctions
              "report" -> liftRun $ readIORef context >>= return . toGVal . reportContextCustomVariable
-             _ -> return def
+             _ -> case lookup var gingerFunctions of
+                    Just v -> return $ fromFunction v
+                    Nothing -> throw $ VisibleError $ Text.concat ["Variable '", var, "' cannot be found"]
 
 render conn report = do
   headerState <- createHeaderState
@@ -56,7 +61,10 @@ render conn report = do
   case template' of
     Nothing -> return "Error: Could not find template for report"
     Just (t, context) -> do
-      Right parsed <- parseGinger (includeResolver conn context) Nothing $ Text.unpack $ templateSource $ reportTemplate t
+      parsed' <- parseGinger (includeResolver conn context) Nothing $ Text.unpack $ templateSource $ reportTemplate t
+      parsed <- case parsed' of
+                  Right p -> return p
+                  Left msg -> throw $ VisibleError $ Text.pack $ peErrorMessage msg
       vec <- newIORef $ D.empty
       let reportState = ReportState { stateReportId = report, stateTemplateId = templateId $ reportTemplate t, stateHeadingState = headerState, stateDbConn = conn }
           gingerContext = makeContextHtmlM (contextLookup reportState context) (\n -> atomicModifyIORef' vec (\state -> (D.snoc state n, ())))
@@ -66,10 +74,12 @@ render conn report = do
                    vec' <- readIORef vec
                    finalized <- finalizeRefs headerState
                    toc <- finalizeTableOfContents headerState
+                   deepseq finalized $ return () -- finalized must be fully evaluated before the replacer is run
+                                                 -- to make sure that any exceptions are caught.
                    let replacer = Replacer.build CaseSensitive $ toc:finalized
                    let h = execWriter $ mapM (tell . (Replacer.run replacer) . htmlSource) $ D.toList vec'
                    return h
                    --case finalized of
                    --  Right h -> finalizeTableOfContents headerState h >>= return
                    --  Left err -> return $ Text.concat ["Error: ", err]
-        Left err -> return $ Text.concat ["Error: ", runtimeErrorMessage err]
+        Left err -> throw $ VisibleError $ runtimeErrorMessage err

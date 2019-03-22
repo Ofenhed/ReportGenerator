@@ -3,6 +3,7 @@
 {-# LANGUAGE BangPatterns #-}
 module Heading where
 
+import Types
 import qualified Data.Text as Text
 import Text.Ginger.Html (htmlSource, unsafeRawHtml, htmlSource, html, Html)
 import Data.Maybe (fromJust, maybe)
@@ -78,6 +79,7 @@ finalizeRefs state = do
   heading <- readIORef state
   return $ V.toList $ flip V.map (headingRefsUsed heading) $ \x -> case V.find (\(otherRef, _) -> maybe False ((==)x) otherRef) $ headingKnown heading of
                                                                      Just (_, (chp, _)) -> (refFinder x, chp)
+                                                                     Nothing -> throw $ VisibleError $ Text.concat ["Could not find reference '", x, "'"]
 
 finalizeTableOfContents state = do
   heading <- readIORef state

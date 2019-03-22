@@ -28,6 +28,7 @@ dependencies:
 - cryptonite
 - data-default
 - data-default-class
+- deepseq
 - dlist
 - file-embed
 - ginger
