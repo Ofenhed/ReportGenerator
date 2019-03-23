@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Templates where
 
 import Common
@@ -32,11 +33,13 @@ instance ToGVal m Template where
 
 instance ToGVal m TemplateVars where
   toGVal t = dict $ [("id", toGVal $ templateVarsId t)
+                    ,("type", toGVal $ "arr")
                     ,("name", toGVal $ templateVarsName t)
                     ,("description", toGVal $ templateVarsDescription t)
                     ,("children", toGVal $ templateVarsChildren t)]
 instance ToGVal m TemplateVar where
   toGVal t = dict $ [("id", toGVal $ templateVarId t)
+                    ,("type", toGVal $ "var")
                     ,("name", toGVal $ templateVarName t)
                     ,("description", toGVal $ templateVarDescription t)
                     ,("default", toGVal $ templateVarDefault t)
@@ -48,11 +51,9 @@ listTemplates context req f = do
   let lookup :: VarName -> Run p IO Html (GVal (Run p IO Html))
       lookup name = case name of
                       "templates" -> return $ toGVal templates
-                      _ -> return $ def
+                      _ -> return def
   result <- runTemplate "list_templates" lookup
-  case result of
-    Left _ -> throw $ VisibleError "Could not generate webpage"
-    Right t -> f $ responseText status200 [("Content-Type", "text/html")] $ t
+  f $ responseText status200 [("Content-Type", "text/html")] result
     
 editTemplate :: Int -> CsrfFormApplication
 editTemplate id csrf context req f = do
@@ -65,14 +66,12 @@ editTemplate id csrf context req f = do
                           "template" -> return $ toGVal template
                           "variables" -> return $ toGVal variables
                           "csrf" -> return $ toGVal csrf
-                          _ -> return $ def
+                          _ -> return def
       result <- runTemplate "edit_template" lookup
-      case result of
-        Left e -> throw $ VisibleError $ Text.concat ["Could not generate webpage: ", Text.pack e]
-        Right t -> f $ responseText status200 [("Content-Type", "text/html")] $ t
+      f $ responseText status200 [("Content-Type", "text/html")] result
     
-saveTemplate :: Int -> CsrfVerifiedApplication
-saveTemplate id (params, _) context req f = do
+editTemplate_ :: Int -> CsrfVerifiedApplication
+editTemplate_ id (params, _) context req f = do
   _ <- flip (changeTemplate $ sessionDbConn context) id $ \t ->
                case t of
                  Nothing -> (Nothing, False)
@@ -86,3 +85,31 @@ saveTemplate id (params, _) context req f = do
                                                           Just s -> s
                                                           Nothing -> templateEditor t }, True)
   redirectSame req f
+
+promptDeleteTemplateVariable tid varid csrf context req f = do
+  let lookup name = case name of
+                      "csrf" -> return $ toGVal csrf
+                      "template_id" -> return $ toGVal tid
+                      _ -> return def
+  result <- runTemplate "delete_template_var" lookup
+  f $ responseText status200 [("Content-Type", "text/html")] result
+
+promptDeleteTemplateVariable_ tid varid _ context req f = do
+  Database.Writer.deleteTemplateVariable (sessionDbConn context) varid
+  redirect (Text.concat ["/template/", Text.pack $ show tid]) req f
+
+addTemplateVar tid parent new csrf context req f = do
+  let lookup name = case (name, new) of
+                      ("csrf", _) -> return $ toGVal csrf
+                      ("type", TemplateVarParentVars _) -> return $ toGVal ("list" :: Text.Text)
+                      ("type", TemplateVarParentVar _) -> return $ toGVal ("val" :: Text.Text)
+                      _ -> return def
+  result <- runTemplate "add_template_variable" lookup
+  f $ responseText status200 [("Content-Type", "text/html")] result
+
+addTemplateVar_ tid parent new (params, _) context req f = do
+  case (new, lookup "name" params, lookup "value" params) of
+    (TemplateVarParentVar _, Just name, Just value) -> Database.Writer.addTemplateVariable (sessionDbConn context) parent name value
+    (TemplateVarParentVars _, Just name, Nothing) -> Database.Writer.addTemplateArray (sessionDbConn context) parent name
+    _ -> throw $ VisibleError "I though we were over this?"
+  redirect (Text.concat ["/template/", Text.pack $ show tid]) req f

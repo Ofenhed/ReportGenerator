@@ -6,7 +6,13 @@
   {%- if children != "" -%}
     <input type="checkbox" class="ul-tree">
   {%- endif -%}
-  <label>{{- var.name -}}</label>
+  <label class="ul-tree">{{- var.name -}}
+    <div class="ul-control">
+      <a href="/template/{{template.id}}/{{var.type}}/{{var.id}}/add/var">Add variable</a>
+      <a href="/template/{{template.id}}/{{var.type}}/{{var.id}}/add/arr">Add list</a>
+      <a href="/template/{{template.id}}/{{var.type}}/{{var.id}}/delete">Delete</a>
+    </div>
+  </label>
   {{- children -}}
   </li>
 {%- endmacro %}
@@ -41,7 +47,17 @@
 </form>
 
 <div class="ul-tree">
-{{ printVarTree(variables) }}
+  <ul class="ul-tree">
+    <li class="ul-tree">
+      <label class="ul-tree">root
+        <div class="ul-control">
+          <a href="/template/{{template.id}}/add/var">Add variable</a>
+          <a href="/template/{{template.id}}/add/arr">Add list</a>
+        </div>
+      </label>
+      {{ printVarTree(variables) }}
+    </li>
+  </ul>
 </div>
 
 {{ endTemplate() }}

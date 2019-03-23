@@ -14,10 +14,6 @@ import qualified Data.Map as Map
 
 import Debug.Trace
 
-templateParentName (TemplateVarParent i) = ("template", i)
-templateParentName (TemplateVarParentVar i) = ("templateVar", i)
-templateParentName (TemplateVarParentVars i) = ("templateVars", i)
-
 getVariable :: Connection -> TemplateVarParent -> Int -> IO [(Int, Maybe Int, Text.Text, Maybe Text.Text)]
 getVariable conn template parent = do
   let (target, val) = templateParentName template

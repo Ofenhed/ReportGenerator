@@ -1,10 +1,12 @@
 {-# LANGUAGE TemplateHaskell #-}
 module TemplateFiles (runTemplate) where
 
+import Types
+
 import System.IO (openBinaryFile, IOMode(ReadMode), hGetContents)
 import Data.FileEmbed (embedDir)
 import Language.Haskell.TH
-import Control.Exception (try)
+import Control.Exception (try, throw)
 import System.IO.Error (catchIOError, isDoesNotExistError, ioError)
 import Data.List (stripPrefix)
 import Text.Ginger.Parse (parseGinger, ParserError(..))
@@ -17,6 +19,7 @@ import qualified Data.DList                     as D
 import qualified Data.Map                       as Map
 import qualified Data.ByteString.Char8          as C8
 import qualified Data.Text.Encoding             as Encoding
+import qualified Data.Text                      as Text
 
 cachedAtCompile = flip lookup $(embedDir "templates")
 
@@ -31,19 +34,19 @@ cachedReadFile filename = catchIOError (openBinaryFile ("templates/" ++ filename
 runTemplate filename lookup = do
   content <- cachedReadFile filename
   case content of
-    Nothing -> return $ Left $ "Template " ++ filename ++ " does not exist"
+    Nothing -> throw $ VisibleError $ Text.pack $ "Template " ++ filename ++ " does not exist"
     Just f -> do
       parsed <- parseGinger cachedReadFile Nothing f
       case parsed of
-        Left err -> return $ Left $ "Parser error: " ++ show err
+        Left err -> throw $ VisibleError $ Text.pack $ "Parser error: " ++ show err
         Right parsed' -> do
           vec <- newIORef $ D.empty
           let context = makeContextHtmlM lookup (\n -> atomicModifyIORef' vec (\state -> (D.snoc state n, ())))
           result <- runGingerT context parsed'
           case result of
-            Left err -> return $ Left $ "Runtime error: " ++ show err
+            Left err -> throw $ VisibleError $ Text.pack $ "Runtime error: " ++ show err
             Right _ -> do
               vec' <- readIORef vec
-              return $ Right $ execWriter $ mapM (tell . htmlSource) $ D.toList vec'
+              return $ execWriter $ mapM (tell . htmlSource) $ D.toList vec'
 
 

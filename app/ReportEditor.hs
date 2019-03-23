@@ -41,9 +41,7 @@ listReports context req f = do
                       "reports" -> return $ toGVal reports
                       _ -> return $ def
   result <- runTemplate "list_reports" lookup
-  case result of
-    Left _ -> throw $ VisibleError "Could not generate webpage"
-    Right t -> f $ responseText status200 [("Content-Type", "text/html")] $ t
+  f $ responseText status200 [("Content-Type", "text/html")] result
 
 data TemplateDataFields = DataFieldBuilder { fieldCheckbox :: [Text.Text],
                                              fieldValue :: [Text.Text],
@@ -86,9 +84,7 @@ editReport id csrf context req f = do
                           "csrf" -> return $ toGVal csrf
                           _ -> dataFieldModifier toSaveMvar name
       result <- runTemplate "edit_report" lookup
-      case result of
-        Left e -> throw $ VisibleError $ Text.concat ["Could not generate webpage: ", Text.pack e]
-        Right t -> f $ responseText status200 [("Content-Type", "text/html")] $ t
+      f $ responseText status200 [("Content-Type", "text/html")] result
     
 saveReport :: Int -> CsrfVerifiedApplication
 saveReport id (params, files) context req f = do

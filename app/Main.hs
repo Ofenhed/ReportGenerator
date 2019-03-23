@@ -43,38 +43,45 @@ clientDir = "static/client"
 
 app sess req f = do
   let call x = x sess req f
+  let toTemplateParent "var" i = return $ TemplateVarParentVar $ read $ Text.unpack i
+      toTemplateParent "arr" i = return $ TemplateVarParentVars $ read $ Text.unpack i
+      toTemplateParent _ _ = throw $ VisibleErrorWithStatus status404 "Now that wasn't very nice, now was it?"
   case (requestMethod req, pathInfo req, Just 1) of
     -- ("GET", ["static", file]) -> f $ responseFile status200 [] (staticDir </> (takeFileName $ Text.unpack file)) Nothing
     -- -- ("GET", ["server", file]) -> f $ responseFile status200 [] (serverDir </> (takeFileName $ Text.unpack file)) Nothing
     -- -- ("GET", ["client", file]) -> f $ responseFile status200 [] (clientDir </> (takeFileName $ Text.unpack file)) Nothing
     -- ("GET", []) -> call indexPage
 
-    -- ("GET", ["findings"]) -> call showFindings
-    -- ("GET", ["findings", "new"]) -> call $ withCsrf $ showFinding Nothing
-    -- ("GET", ["findings", id]) -> call $ withCsrf $ showFinding $ Just (read (Text.unpack id) :: Int)
-    -- ("POST", ["findings", "new"]) -> call $ verifyCsrf $ saveFinding Nothing
-    -- ("POST", ["findings", id]) -> call $ verifyCsrf $ saveFinding $ Just (read (Text.unpack id) :: Int)
 
-    -- ("GET", ["findings", "delete", id]) -> call $ withCsrf $ removeFinding (read (Text.unpack id) :: Int)
-    -- ("POST", ["findings", "delete", id]) -> call $ verifyCsrf $ doRemoveFinding (read (Text.unpack id) :: Int)
-
-    -- ("GET", ["tests"]) -> call showTests
-
-    -- ("GET", ["tests", "new"]) -> call $ withCsrf $ showTest Nothing
-    -- ("GET", ["tests", id]) -> call $ withCsrf $ showTest $ Just (read (Text.unpack id) :: Int)
-    -- ("POST", ["tests", "new"]) -> call $ verifyCsrf $ saveTest Nothing
-    -- ("POST", ["tests", id]) -> call $ verifyCsrf $ saveTest $ Just (read (Text.unpack id) :: Int)
-
-    -- ("GET", ["tests", "delete", id]) -> call $ withCsrf $ removeTest (read (Text.unpack id) :: Int)
-    -- ("POST", ["tests", "delete", id]) -> call $ verifyCsrf $ doRemoveTest (read (Text.unpack id) :: Int)
-
+    -- List and edit reports
     ("GET", ["report"], Just _) -> call $ listReports
     ("GET", ["report", id], Just _) -> call $ withCsrf $ editReport (read $ Text.unpack id :: Int)
     ("POST", ["report", id], Just _) -> call $ verifyCsrf $ saveReport (read $ Text.unpack id :: Int)
+    
+    -- List and edit templates
     ("GET", ["template"], Just _) -> call $ listTemplates
     ("GET", ["template", id], Just _) -> call $ withCsrf $ editTemplate (read $ Text.unpack id :: Int)
-    ("POST", ["template", id], Just _) -> call $ verifyCsrf $ saveTemplate (read $ Text.unpack id :: Int)
+    ("POST", ["template", id], Just _) -> call $ verifyCsrf $ editTemplate_ (read $ Text.unpack id :: Int)
 
+    -- Add subvariables
+    ("GET", ["template", id, parent_type, varid, "add", add_type], Just _) -> do newType <- toTemplateParent add_type "0"
+                                                                                 parentType <- toTemplateParent parent_type varid
+                                                                                 call $ withCsrf $ addTemplateVar (read $ Text.unpack id :: Int) parentType newType
+    ("POST", ["template", id, parent_type, varid, "add", add_type], Just _) -> do newType <- toTemplateParent add_type "0" 
+                                                                                  parentType <- toTemplateParent parent_type varid
+                                                                                  call $ verifyCsrf $ addTemplateVar_ (read $ Text.unpack id :: Int) parentType newType
+    -- Add top variables
+    ("GET", ["template", id, "add", add_type], Just _) -> do newType <- toTemplateParent add_type "0"
+                                                             let id' = read $ Text.unpack id
+                                                             call $ withCsrf $ addTemplateVar id' (TemplateVarParent id') newType
+    ("POST", ["template", id, "add", add_type], Just _) -> do newType <- toTemplateParent add_type "0" 
+                                                              let id' = read $ Text.unpack id
+                                                              call $ verifyCsrf $ addTemplateVar_ id' (TemplateVarParent id') newType
+    -- Delete template variable
+    ("GET", ["template", id, _type, varid, "delete"], Just _) -> toTemplateParent _type varid >>= call . withCsrf . (promptDeleteTemplateVariable (read $ Text.unpack id :: Int))
+    ("POST", ["template", id, _type, varid, "delete"], Just _) -> toTemplateParent _type varid >>= call . verifyCsrf . (promptDeleteTemplateVariable_ (read $ Text.unpack id :: Int))
+
+    -- Generate report
     ("GET", ["report", "generate", id], Just _) -> render (sessionDbConn sess) 1 >>= \rep -> f $ responseText status200 [("Content-Type", "text/html")] rep
 
     _ -> throw $ VisibleErrorWithStatus status404 "Could not find this site."
@@ -91,9 +98,9 @@ showErrors other req f = do
                        Just (VisibleError msg) -> (status500, [("exception", toGVal msg), ("status", toGVal (500 :: Int))])
                        Just (VisibleErrorWithStatus status msg) -> (status, [("exception", toGVal msg), ("status", toGVal $ statusCode status)])
                        _ -> throw err
-      response <- runTemplate "exception" $ \k -> return $ fromMaybe def $ lookup k db
-      case response of
-        Right response' -> f $ responseText status [("Content-Type", "text/html")] response'
+      result <- try (runTemplate "exception" $ \k -> return $ fromMaybe def $ lookup k db) :: IO (Either VisibleError Text.Text)
+      case result of
+        Right result' -> f $ responseText status [("Content-Type", "text/html")] result'
         Left _ -> f $ responseText status500 [] "Something went screwy, and before you knew he was trying to kill everyone."
 
 main = do

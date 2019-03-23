@@ -1,6 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 module Database.Types where
+import Types
+
 import Data.FileEmbed (embedFile)
 
 import Control.Applicative
@@ -10,6 +12,10 @@ import Database.SQLite.Simple.FromRow
 import Database.SQLite.Simple.ToRow
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Encoding
+
+templateParentName (TemplateVarParent i) = ("template", i)
+templateParentName (TemplateVarParentVar i) = ("templateVar", i)
+templateParentName (TemplateVarParentVars i) = ("templateVars", i)
 
 data Template = Template { templateId :: Int
                          , templateIncludeName :: Text.Text
@@ -39,8 +45,8 @@ setupDatabase conn = withTransaction conn $ do
                              \, CONSTRAINT unique_name_template UNIQUE (template, name)\
                              \, CONSTRAINT unique_name_template_var UNIQUE (templateVar, name)\
                              \, CONSTRAINT unique_name_template_vars UNIQUE (templateVars, name)"
-    execute_ conn $ Query $ Text.concat ["CREATE TABLE IF NOT EXISTS TemplateVar (id INTEGER PRIMARY KEY ASC, template INTEGER NULL, templateVar INTEGER NULL, templateVars INTEGER NULL, name TEXT NOT NULL, description TEXT, type TEXT NOT NULL, data TEXT NULL, ", templateVarRelation, ");"]
-    execute_ conn $ Query $ Text.concat ["CREATE TABLE IF NOT EXISTS TemplateVars (id INTEGER PRIMARY KEY ASC, template INTEGER NULL, templateVar INTEGER NULL, templateVars INTEGER NULL, name TEXT NOT NULL, description TEXT, type TEXT NOT NULL, ", templateVarRelation, ");"]
+    execute_ conn $ Query $ Text.concat ["CREATE TABLE IF NOT EXISTS TemplateVar (id INTEGER PRIMARY KEY ASC, template INTEGER NULL, templateVar INTEGER NULL, templateVars INTEGER NULL, name TEXT NOT NULL, description TEXT, data TEXT NULL, ", templateVarRelation, ");"]
+    execute_ conn $ Query $ Text.concat ["CREATE TABLE IF NOT EXISTS TemplateVars (id INTEGER PRIMARY KEY ASC, template INTEGER NULL, templateVar INTEGER NULL, templateVars INTEGER NULL, name TEXT NOT NULL, description TEXT, ", templateVarRelation, ");"]
     execute_ conn "CREATE TABLE IF NOT EXISTS Report (id INTEGER PRIMARY KEY ASC, template INTEGER NOT NULL, name TEXT NOT NULL, FOREIGN KEY (template) REFERENCES TemplateVar(id));"
     execute_ conn "CREATE TABLE IF NOT EXISTS ReportVar (id INTEGER PRIMARY KEY ASC, template INTEGER NOT NULL, parent INTEGER NOT NULL, data TEXT NULL, iv TEXT NULL, FOREIGN KEY (template) REFERENCES TemplateVar(id), CONSTRAINT no_arrays UNIQUE (template, parent));"
     execute_ conn "CREATE TABLE IF NOT EXISTS ReportVars (id INTEGER PRIMARY KEY ASC, template INTEGER NOT NULL, parent INTEGER NOT NULL, data TEXT NULL, iv TEXT NULL, weight INTEGER NOT NULL, FOREIGN KEY (template) REFERENCES TemplateVars(id), FOREIGN KEY (parent) REFERENCES ReportVar(id));"
@@ -55,21 +61,21 @@ setupDatabase conn = withTransaction conn $ do
     execute conn "INSERT INTO Template (includeName, source, includable, editor) VALUES ('eval', ?, 1, '');" (Only $ Text.pack "{% macro _(e, c) -%} \
                                                                                                      \ {{- eval(src=e, context=merge(c, {'heading': heading, 'push_heading': push_heading, 'pop_heading': pop_heading, 'ref': ref, 'report': report})) -}} \
                                                                                                      \{%- endmacro %}")
-    execute conn "INSERT INTO TemplateVar (template, name, description, type) VALUES (?, 'confidential', 'Whether this report is confidential', 'text');" (Only tempId)
+    execute conn "INSERT INTO TemplateVar (template, name, description) VALUES (?, 'confidential', 'Whether this report is confidential');" (Only tempId)
     confidential <- lastInsertRowId conn
-    execute conn "INSERT INTO TemplateVar (template, name, description, type, data) VALUES (?, 'customer', 'The name of the customer', 'text', 'Secret Customer');" (Only tempId)
+    execute conn "INSERT INTO TemplateVar (template, name, description, data) VALUES (?, 'customer', 'The name of the customer', 'Secret Customer');" (Only tempId)
     custId <- lastInsertRowId conn
-    execute conn "INSERT INTO TemplateVar (template, name, description, type) VALUES (?, 'customer_address', 'The address of the customer', 'text');" (Only tempId)
+    execute conn "INSERT INTO TemplateVar (template, name, description) VALUES (?, 'customer_address', 'The address of the customer');" (Only tempId)
     cust2Id <- lastInsertRowId conn
-    execute conn "INSERT INTO TemplateVar (template, name, description, type) VALUES (?, 'summary', 'How bad was it?', 'text');" (Only execSum)
+    execute conn "INSERT INTO TemplateVar (template, name, description) VALUES (?, 'summary', 'How bad was it?');" (Only execSum)
     execVar <- lastInsertRowId conn
-    execute conn "INSERT INTO TemplateVar (templateVar, name, description, type, data) VALUES (?, 'explained', 'How bad was it really?', 'text', 'Pretty damn bad');" (Only execVar)
+    execute conn "INSERT INTO TemplateVar (templateVar, name, description, data) VALUES (?, 'explained', 'How bad was it really?', 'Pretty damn bad');" (Only execVar)
     recVar <- lastInsertRowId conn
-    execute conn "INSERT INTO TemplateVars (template, name, description, type) VALUES (?, 'people', 'The people involved in this report', 'text');" (Only tempId)
+    execute conn "INSERT INTO TemplateVars (template, name, description) VALUES (?, 'people', 'The people involved in this report');" (Only tempId)
     peopleId <- lastInsertRowId conn
-    execute conn "INSERT INTO TemplateVars (templateVars, name, description, type) VALUES (?, 'title', 'Titles for a person', 'text');" (Only peopleId)
+    execute conn "INSERT INTO TemplateVars (templateVars, name, description) VALUES (?, 'title', 'Titles for a person');" (Only peopleId)
     titleId <- lastInsertRowId conn
-    execute conn "INSERT INTO TemplateVar (templateVars, name, description, type) VALUES (?, 'email', 'Email to person for report', 'text');" (Only peopleId)
+    execute conn "INSERT INTO TemplateVar (templateVars, name, description) VALUES (?, 'email', 'Email to person for report');" (Only peopleId)
     emailId <- lastInsertRowId conn
     execute conn "INSERT INTO Report (template, name) VALUES (?, 'Some customer')" (Only tempId)
     reportId <- lastInsertRowId conn

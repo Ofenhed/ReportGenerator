@@ -45,6 +45,33 @@ changeTemplate conn f id = do
         
     _ -> return ret
 
+deleteTemplateVariable :: Connection -> TemplateVarParent -> IO ()
+deleteTemplateVariable conn idx = withTransaction conn $ deleteTemplateVariable' conn idx
+  where
+  deleteTemplateVariable' conn (TemplateVarParentVar i) = do
+    var <- query conn "SELECT id FROM TemplateVar WHERE templateVar = ?" (Only i)
+    flip mapM var $ (deleteTemplateVariable' conn) . TemplateVarParentVar . fromOnly
+    vars <- query conn "SELECT id FROM TemplateVars WHERE templateVar = ?" (Only i)
+    flip mapM vars $ (deleteTemplateVariable' conn) . TemplateVarParentVars . fromOnly
+    execute conn "DELETE FROM ReportVar WHERE template = ?" (Only i)
+    execute conn "DELETE FROM TemplateVar WHERE id = ?" (Only i)
+  
+  deleteTemplateVariable' conn (TemplateVarParentVars i) = do
+    var <- query conn "SELECT id FROM TemplateVar WHERE templateVars = ?" (Only i)
+    flip mapM var $ (deleteTemplateVariable' conn) . TemplateVarParentVar . fromOnly
+    vars <- query conn "SELECT id FROM TemplateVars WHERE templateVars = ?" (Only i)
+    flip mapM vars $ (deleteTemplateVariable' conn) . TemplateVarParentVars . fromOnly
+    execute conn "DELETE FROM ReportVars WHERE template = ?" (Only i)
+    execute conn "DELETE FROM TemplateVars WHERE id = ?" (Only i)
+
+  fromOnly (Only x) = x
+
+addTemplateVariable conn parent name value = let (parentType, idx) = templateParentName parent
+                                               in execute conn (Query $ Text.concat ["INSERT INTO TemplateVar (", parentType, ", name, data) VALUES (?, ?, ?)"]) (idx, name, value)
+
+addTemplateArray conn parent name = let (parentType, idx) = templateParentName parent
+                                      in execute conn (Query $ Text.concat ["INSERT INTO TemplateVars (", parentType, ", name) VALUES (?, ?)"]) (idx, name)
+
 setVariable :: (FromField a, ToField a) => Connection -> Int -> IndexPathType -> a -> IO Bool
 setVariable conn report path value = do
   case take 2 $ reverse path of

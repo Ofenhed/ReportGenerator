@@ -18,6 +18,24 @@
       div.ul-tree li.ul-tree > input + label {
         margin-left: 0px;
       }
+      div.ul-tree li.ul-tree > label > div.ul-control {
+        margin-left: 1em;
+        visibility: hidden;
+        display: inline-block;
+      }
+      div.ul-tree li.ul-tree > label > div.ul-control > a {
+        color: #000;
+      }
+      div.ul-tree li.ul-tree > label > div.ul-control:hover > a {
+        background: #000;
+        text-decoration: none;
+      }
+      div.ul-tree li.ul-tree > label > div.ul-control:hover > a:hover {
+        background: none;
+      }
+      div.ul-tree li.ul-tree > label:hover > div.ul-control {
+        visibility: visible;
+      }
       div.ul-tree li.ul-tree > input {
         width: 1.5em;
         margin: 0px;
