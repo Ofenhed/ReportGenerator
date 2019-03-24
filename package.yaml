@@ -33,6 +33,7 @@ dependencies:
 - file-embed
 - ginger
 - http-types
+- memory
 - mtl
 - random
 - sqlite-simple

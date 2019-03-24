@@ -82,6 +82,14 @@ editReport id csrf context req f = do
                           "variables" -> liftRun $ readIORef context >>= return . toGVal . (Map.map IndexedReportVar) . reportContextVariable
                           "custom_variables" -> return $ toGVal [("image_1", "no")]
                           "csrf" -> return $ toGVal csrf
+                          -- "delete_template_var" -> \vars -> case vars of
+                          --                                     ["delete_id", var] -> do
+                          --                                       let var' = read $ asText var :: IndexPathType
+                          --                                       case last var' of
+                          --                                         IndexVal i -> throw $ VisibleError "Not yet implemented."
+                          --                                         IndexArr i -> throw $ VisibleError "Not yet implemented."
+                          --                                         _ -> throw $ VisibleError "Invalid report ID."
+                          --                                     _ -> throw $ VisibleError "Function delete_template_var expects one named variable, (delete_id=varid)"
                           _ -> dataFieldModifier toSaveMvar name
       result <- runTemplate "edit_report" lookup
       f $ responseText status200 [("Content-Type", "text/html")] result
