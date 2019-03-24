@@ -23,6 +23,8 @@ import Network.HTTP.Types (status200, status404, status500, Status(statusCode))
 import Data.Maybe (fromJust, fromMaybe)
 import Control.Monad.ST (runST)
 import System.IO (openFile, IOMode(ReadMode), hGetContents)
+import System.Random (randomIO)
+import Crypto.MAC.HMAC (initialize)
 
 import System.Environment (getEnvironment)
 -- import System.FilePath ((</>), takeFileName)
@@ -106,10 +108,14 @@ showErrors other req f = do
 main = do
   session <- Vault.newKey
   store <- mapStore_
+  hmac <- do key <- flip mapM [1..256] $ (\_ -> randomIO) :: IO [Char]
+             return $ initialize $ C8.pack key
   db <- openDatabase
   port <- lookup "PORT" <$> getEnvironment
   let settings = maybe defaultSettings (\p -> setPort (read p) defaultSettings) port
   runTLS (tlsSettings "new.cert.cert" "new.cert.key") settings $ showErrors
                                                                $ withSession store "sess" (def { setCookieHttpOnly = True, setCookieSecure = True }) session
                                                                $ websocketsOr defaultConnectionOptions sockServer
-                                                               $ app $ Session { sessionDbConn = db, sessionSession = session }
+                                                               $ app $ Session { sessionDbConn = db
+                                                                               , sessionSession = session
+                                                                               , sessionHasher = hmac}
