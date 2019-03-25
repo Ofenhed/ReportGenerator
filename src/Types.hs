@@ -55,11 +55,10 @@ lookupGVal lookup stack = def { isNull = False
 instance ToGVal m IndexedReportVar where
   toGVal (IndexedReportVar xs) = def { asText = asText $ toGVal ("Still in" :: Text.Text)
                                      , isNull = (isNothing $ reportVarValue xs) && (null $ snd $ fromMaybe ([], []) $ reportVarArray xs)
-                                     , asLookup = Just $ flip lookup [("idx", toGVal $ fst $ fromMaybe ([], Nothing) $ reportVarValue xs)
+                                     , asLookup = Just $ flip lookup [("idx", toGVal $ Text.pack $ show $ fst $ fromMaybe ([], Nothing) $ reportVarValue xs)
                                                                      ,("val", toGVal $ snd $ fromMaybe ([], Nothing) $ reportVarValue xs)
-                                                                     ,("arr", lookupGVal lookup $ [("idx", toGVal $ fst $ fromMaybe ([], []) $ reportVarArray xs)
+                                                                     ,("arr", lookupGVal lookup $ [("idx", toGVal $ Text.pack $ show $ fst $ fromMaybe ([], []) $ reportVarArray xs)
                                                                                                   ,("list", toGVal $ map IndexedReportVar $ snd $ fromMaybe ([], []) $ reportVarArray xs)])
-                                                                                                  -- ])
                                                                      ,("children", toGVal $ Map.map IndexedReportVar $ reportVarVariables xs)]}
 
 instance ToGVal m ReportVar where

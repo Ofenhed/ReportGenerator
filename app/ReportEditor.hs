@@ -19,6 +19,7 @@ import qualified Data.Text.Encoding as Encoding
 import Data.Maybe (isJust)
 import qualified Data.ByteString.Lazy.Char8 as LC8
 import qualified Data.ByteString.Char8      as C8
+import Safe (headMay)
 
 import Debug.Trace
 
@@ -30,6 +31,7 @@ instance ToGVal m (Map.Map Text.Text (GVal m)) where
 instance ToGVal m Report where
   toGVal t = dict $ [("id", toGVal $ reportId t)
                     ,("name", toGVal $ reportName t)
+                    ,("templateId", toGVal $ templateId $ reportTemplate t)
                     ,("templateIncludeName", toGVal $ templateIncludeName $ reportTemplate t)
                     ,("templateLongName", toGVal $ templateLongName $ reportTemplate t)
                     ,("editor", toGVal $ templateEditor $ reportTemplate t)]
@@ -68,9 +70,9 @@ dataFieldModifier ref func = do
                                     Nothing -> throw $ VisibleError "Fields has already been signed"
                                     Just j -> return $ toGVal j
     _ -> throw $ VisibleError $ Text.concat ["Variable ", func, " does not exist"]
-    
-editReport :: Int -> CsrfFormApplication
-editReport id csrf context req f = do
+
+editReport :: Int -> [Text.Text] -> CsrfFormApplication
+editReport id args csrf context req f = do
   reportAndVars <- getReport (sessionDbConn context) id
   toSaveMvar <- newIORef $ DataFieldBuilder { fieldCheckbox = [], fieldValue = [], fieldFile = [] }
   case reportAndVars of
@@ -82,6 +84,8 @@ editReport id csrf context req f = do
                           "variables" -> liftRun $ readIORef context >>= return . toGVal . (Map.map IndexedReportVar) . reportContextVariable
                           "custom_variables" -> return $ toGVal [("image_1", "no")]
                           "csrf" -> return $ toGVal csrf
+                          "args" -> return $ toGVal args
+                          "rpc" -> return $ toGVal $ headMay args == Just "rpc"
                           -- "delete_template_var" -> \vars -> case vars of
                           --                                     ["delete_id", var] -> do
                           --                                       let var' = read $ asText var :: IndexPathType
