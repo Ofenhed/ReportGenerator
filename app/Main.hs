@@ -60,7 +60,8 @@ app sess req f = do
 
     -- List and edit reports
     ("GET", ["report"], Just _) -> call $ listReports
-    ("GET", "report":id:args, Just _) -> call $ withCsrf $ editReport (read $ Text.unpack id :: Int64) args
+    ("GET", "report":"sub":id:tid:args, Just _) -> call $ withCsrf $ editReport (read $ Text.unpack id :: Int64) (Just $ read $ Text.unpack tid :: Maybe Int64) args
+    ("GET", "report":id:args, Just _) -> call $ withCsrf $ editReport (read $ Text.unpack id :: Int64) Nothing args
     ("POST", ["report", id], Just _) -> call $ verifyCsrf $ saveReport (read $ Text.unpack id :: Int64)
     ("POST", ["report", id, "list", "add"], Just _) -> call $ verifyCsrf $ reportAddList (read $ Text.unpack id :: Int64)
     -- ("POST", ["report", id, "list", "remove"], Just _) -> call $ verifyCsrf $ reportRemoveList (read $ Text.unpack id :: Int64)

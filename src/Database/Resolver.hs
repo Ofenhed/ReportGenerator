@@ -18,7 +18,7 @@ import Debug.Trace
 getVariable :: Connection -> TemplateVarParent -> Int64 -> IO [(Int64, Maybe Int64, Text.Text, Maybe Text.Text)]
 getVariable conn template parent = do
   let (target, val) = templateParentName template
-  query conn (Query $ Text.concat ["SELECT TemplateVar.id, ReportVar.id, TemplateVar.name, CASE WHEN ReportVar.data IS NOT NULL THEN ReportVar.data ELSE TemplateVar.data END AS data FROM TemplateVar LEFT JOIN ReportVar ON ReportVar.template == TemplateVar.id AND ReportVar.parent == ? WHERE TemplateVar.", target, " == ?"]) (parent, val)
+  query conn (Query $ Text.concat ["SELECT TemplateVar.id, ReportVar.id, TemplateVar.name, CASE WHEN ReportVar.data IS NOT NULL THEN ReportVar.data ELSE TemplateVar.data END AS data FROM TemplateVar LEFT JOIN ReportVar ON ReportVar.template = TemplateVar.id AND ReportVar.parent = ? WHERE TemplateVar.", target, " = ?"]) (parent, val)
 
 getVariables :: Connection -> TemplateVarParent -> Int64 -> IO [(Int64, Text.Text, [(Int64, Maybe Text.Text)])]
 getVariables conn template parent = do
@@ -26,23 +26,25 @@ getVariables conn template parent = do
                         TemplateVarParent i -> ("template", i)
                         TemplateVarParentVar i -> ("templateVar", i)
                         TemplateVarParentVars i -> ("templateVars", i)
-  vars <- query conn (Query $ Text.concat ["SELECT TemplateVars.id, TemplateVars.name FROM TemplateVars WHERE ", target, " == ?"]) (Only val)
+  vars <- query conn (Query $ Text.concat ["SELECT TemplateVars.id, TemplateVars.name FROM TemplateVars WHERE ", target, " = ?"]) (Only val)
   flip mapM vars $ \(tId, tName) -> do
-    values <- query conn "SELECT id, data FROM ReportVars WHERE parent == ? AND template == ? ORDER BY weight ASC" (parent, tId)
+    values <- query conn "SELECT id, data FROM ReportVars WHERE parent = ? AND template = ? ORDER BY weight ASC" (parent, tId)
     return $ (tId, tName, values)
 
 getValue conn report var = do
-  result <- query conn "SELECT * FROM ReportVar WHERE report == ? AND parent == ?" (report, var)
+  result <- query conn "SELECT * FROM ReportVar WHERE report = ? AND parent = ?" (report, var)
   case result of
     [result] -> return $ Just result
     [] -> return $ Nothing
 
 getValues conn report var = do
-  query conn "SELECT * FROM ReportVars WHERE report == ? AND parent == ?" (report, var)
+  query conn "SELECT * FROM ReportVars WHERE report = ? AND parent = ?" (report, var)
 
-getReport :: Connection -> Int64 -> IO (Maybe (Report, IOReportContext))
-getReport conn reportId = do
-  var <- query conn "SELECT Report.id, Report.name, Template.* FROM Report LEFT JOIN Template ON Report.template == Template.id WHERE Report.id = ?" (Only reportId)
+getReport :: Connection -> Int64 -> Maybe Int64 -> IO (Maybe (Report, IOReportContext))
+getReport conn reportId tempId = do
+  var <- case tempId of
+           Nothing -> query conn "SELECT Report.id, Report.name, Template.* FROM Report LEFT JOIN Template ON Report.template = Template.id WHERE Report.id = ?" (Only reportId)
+           Just i -> query conn "SELECT Report.id, Report.name, Template.* FROM Report INNER JOIN Template ON Template.id = ? WHERE Report.id = ?" (i, reportId)
   context <- newIORef $ ReportContext { reportContextId = reportId, reportContextVariable = Map.empty, reportContextCustomVariable = Map.empty }
   case var of
     [] -> return Nothing
@@ -77,7 +79,7 @@ includeTemplateVariables conn context key template = do
 getTemplate :: Connection -> IOReportContext -> Text.Text -> Bool -> IO (Maybe Text.Text)
 getTemplate conn context template included = do
   traceShowM template
-  var <- query conn "SELECT id, includeName, source FROM Template WHERE includeName == ? AND (? == 0 OR includable == 1)" (template, included)
+  var <- query conn "SELECT id, includeName, source FROM Template WHERE includeName = ? AND (? = 0 OR includable = 1)" (template, included)
   context' <- readIORef context
   case var of
     [] -> return $ Nothing
@@ -87,6 +89,18 @@ getTemplate conn context template included = do
       return $ Just v
 
 -- Editor
+
+getTemplateEditor :: Connection -> IOReportContext -> Text.Text -> Bool -> IO (Maybe Text.Text)
+getTemplateEditor conn context template included = do
+  traceShowM template
+  var <- query conn "SELECT id, includeName, editor FROM Template WHERE includeName = ? AND (? = 0 OR includable = 1)" (template, included)
+  context' <- readIORef context
+  case var of
+    [] -> return $ Nothing
+    [(tId, name, v)] -> do
+      includeTemplateVariables conn context name tId
+      c <- readIORef context
+      return $ Just v
 
 getTemplates :: Connection -> IO [Template]
 getTemplates conn = query_ conn "SELECT * FROM Template" :: IO [Template]
@@ -105,14 +119,14 @@ data TemplateVar = TemplateVar { templateVarId :: Int64
 
 getTemplateAndVariables :: Connection -> Int64 -> IO (Maybe (Template, TemplateVarTree))
 getTemplateAndVariables conn id = do
-  template <- query conn "SELECT * FROM Template WHERE Template.id == ?" (Only id) :: IO [Template]
+  template <- query conn "SELECT * FROM Template WHERE Template.id = ?" (Only id) :: IO [Template]
   case template of
     [] -> return Nothing
     [template'] -> do
       let findVarsRecursive parent = do
             let (target, val) = templateParentName parent
-            templateVars <- query conn (Query $ Text.concat ["SELECT id, name, description FROM TemplateVars WHERE ", target, " == ?"]) (Only val)
-            templateVar <- query conn (Query $ Text.concat ["SELECT id, name, description, data FROM TemplateVar WHERE ", target, " == ?"]) (Only val)
+            templateVars <- query conn (Query $ Text.concat ["SELECT id, name, description FROM TemplateVars WHERE ", target, " = ?"]) (Only val)
+            templateVar <- query conn (Query $ Text.concat ["SELECT id, name, description, data FROM TemplateVar WHERE ", target, " = ?"]) (Only val)
             vars' <- flip mapM templateVars $ \(varsId, varsName, varsDesciption) ->
                                                 findVarsRecursive (TemplateVarParentVars varsId) >>=
                                                   \children -> return $ TemplateVars { templateVarsId = varsId

@@ -57,7 +57,7 @@ setupDatabase conn = withTransaction conn $ do
 
     execute conn "INSERT INTO Template (includeName, source, includable, editor) VALUES ('pentest', ?, 0, ?);" (Encoding.decodeUtf8 $(embedFile "temp/default_report.txt"), Encoding.decodeUtf8 $(embedFile "temp/pentest_editor.txt"))
     tempId <- lastInsertRowId conn
-    execute conn "INSERT INTO Template (includeName, source, includable, editor) VALUES ('exec_summary', ?, 1, '');" (Only $ Text.pack "{{ heading(1, 'Executive Summary') }} This is the executive summary. Stuff was {{template.exec_summary.summary}}. {{template.exec_summary.summary.explained}}")
+    execute conn "INSERT INTO Template (includeName, source, includable, editor) VALUES ('exec_summary', ?, 1, ?);" (Text.pack "{{ heading(1, 'Executive Summary') }} This is the executive summary. Stuff was {{template.exec_summary.summary}}. {{template.exec_summary.summary.explained}}", Text.pack "{% if report.templateIncludeName == 'exec_summary' %}{{ make_text(variables.exec_summary.children.summary) }}{% else %}<a href='/report/sub/{{report.templateId}}/2/'>Exec Summary</a> {{variables.exec_summary.children.summary.val}}{%endif%}")
     execSum <- lastInsertRowId conn
     execute conn "INSERT INTO Template (includeName, source, includable, editor) VALUES ('eval', ?, 1, '');" (Only $ Text.pack "{% macro _(e, c) -%} \
                                                                                                      \ {{- eval(src=e, context=merge(c, {'heading': heading, 'push_heading': push_heading, 'pop_heading': pop_heading, 'ref': ref, 'report': report})) -}} \
