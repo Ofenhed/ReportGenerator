@@ -14,6 +14,7 @@ import Data.IORef (newIORef, atomicModifyIORef', writeIORef, readIORef)
 import Text.Ginger.Run (makeContextHtmlM, runGingerT, runtimeErrorMessage)
 import Control.Monad.Writer (execWriter, tell)
 import Text.Ginger.Html (htmlSource)
+import Data.Maybe (maybe)
 
 import qualified Data.DList                     as D
 import qualified Data.Map                       as Map
@@ -31,12 +32,12 @@ cachedReadFile filename = catchIOError (openBinaryFile ("templates/" ++ filename
                                                           Nothing -> return Nothing
                                                    else return Nothing
 
-runTemplate filename lookup = do
+runTemplate fetcher filename lookup = do
   content <- cachedReadFile filename
   case content of
     Nothing -> throw $ VisibleError $ Text.pack $ "Template " ++ filename ++ " does not exist"
     Just f -> do
-      parsed <- parseGinger cachedReadFile Nothing f
+      parsed <- parseGinger (maybe cachedReadFile (\a -> a cachedReadFile) fetcher) Nothing f
       case parsed of
         Left err -> throw $ VisibleError $ Text.pack $ "Parser error: " ++ show err
         Right parsed' -> do

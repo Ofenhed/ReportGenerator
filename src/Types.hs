@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, FlexibleInstances, MultiParamTypeClasses, FlexibleContexts, AllowAmbiguousTypes #-}
-module Types (ReportVar(..), ReportContext(..), IOReportContext(..), TemplateVarParent(..), VisibleError(..), Connection, throw, IndexType(..), IndexedReportVar(..), IndexPathType(..)) where 
+module Types (ReportVar(..), ReportContext(..), IOReportContext(..), TemplateVarParent(..), VisibleError(..), Connection, throw, IndexType(..), IndexedReportVar(..), IndexPathType(..), Int64) where 
 import Database.SQLite.Simple (Connection)
 import qualified Data.Text as Text
 import Control.Exception (Exception(..), throw)
@@ -9,13 +9,14 @@ import qualified Data.Map as Map
 import Data.IORef (IORef)
 import Data.Default.Class (def)
 import Network.HTTP.Types (Status)
+import Data.Int (Int64)
 
 import Debug.Trace
 
-data IndexType = IndexVal Int
-               | IndexArr Int
-               | IndexTempVar Int
-               | IndexTempVars Int
+data IndexType = IndexVal Int64
+               | IndexArr Int64
+               | IndexTempVar Int64
+               | IndexTempVars Int64
 type IndexPathType = [IndexType]
 
 instance {-# OVERLAPPING #-} Show IndexPathType where
@@ -49,6 +50,9 @@ data IndexedReportVar = IndexedReportVar ReportVar deriving Show
 instance {-# OVERLAPPING #-} ToGVal m [IndexType] where
   toGVal = toGVal . show
 
+instance ToGVal m Int64 where
+  toGVal = toGVal . toInteger
+
 lookupGVal lookup stack = def { isNull = False
                               , asLookup = Just $ flip lookup stack }
 
@@ -76,14 +80,14 @@ instance ToGVal m a => ToGVal m (Map.Map Text.Text a) where
                   , isNull = Map.null xs
                   }
 
-data ReportContext = ReportContext { reportContextId :: Int
+data ReportContext = ReportContext { reportContextId :: Int64
                                    , reportContextVariable :: Map.Map Text.Text ReportVar
                                    , reportContextCustomVariable :: Map.Map Text.Text Text.Text } deriving Show
 type IOReportContext = IORef ReportContext
 
-data TemplateVarParent = TemplateVarParent Int
-                       | TemplateVarParentVar Int
-                       | TemplateVarParentVars Int deriving Show
+data TemplateVarParent = TemplateVarParent Int64
+                       | TemplateVarParentVar Int64
+                       | TemplateVarParentVars Int64 deriving Show
 
 data VisibleError = VisibleError Text.Text
                   | VisibleErrorWithStatus Status Text.Text deriving Show

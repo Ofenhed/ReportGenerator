@@ -12,12 +12,13 @@ import Database.SQLite.Simple.FromRow
 import Database.SQLite.Simple.ToRow
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Encoding
+import Data.Int (Int64)
 
 templateParentName (TemplateVarParent i) = ("template", i)
 templateParentName (TemplateVarParentVar i) = ("templateVar", i)
 templateParentName (TemplateVarParentVars i) = ("templateVars", i)
 
-data Template = Template { templateId :: Int
+data Template = Template { templateId :: Int64
                          , templateIncludeName :: Text.Text
                          , templateLongName :: Maybe Text.Text
                          , templateDescription :: Maybe Text.Text
@@ -25,7 +26,7 @@ data Template = Template { templateId :: Int
                          , templateEditor :: Text.Text
                          , templateIncludable :: Int } deriving Show
 
-data Report = Report { reportId :: Int,
+data Report = Report { reportId :: Int64,
                        reportName :: Text.Text,
                        reportTemplate :: Template } deriving Show
 

@@ -11,13 +11,14 @@ import Database.SQLite.Simple.ToRow
 import Database.SQLite.Simple.ToField
 import Database.SQLite.Simple.FromField
 import Data.IORef (newIORef, readIORef, atomicModifyIORef')
+import Data.Int (Int64)
 
 import qualified Data.Text as Text
 import qualified Data.Map as Map
 
 import Debug.Trace
 
-changeTemplate :: Connection -> (Maybe Template -> (Maybe Template, a)) -> Int -> IO a
+changeTemplate :: Connection -> (Maybe Template -> (Maybe Template, a)) -> Int64 -> IO a
 changeTemplate conn f id = do
   template <- query conn "SELECT * FROM Template WHERE id == ?" (Only id)
   let var = case template of
@@ -75,8 +76,9 @@ addTemplateVariable conn parent name value = let (parentType, idx) = templatePar
 addTemplateArray conn parent name = let (parentType, idx) = templateParentName parent
                                       in execute conn (Query $ Text.concat ["INSERT INTO TemplateVars (", parentType, ", name) VALUES (?, ?)"]) (idx, name)
 
-setVariable :: (FromField a, ToField a) => Connection -> Int -> IndexPathType -> a -> IO Bool
+setVariable :: (FromField a, ToField a, Show a) => Connection -> Int64 -> IndexPathType -> a -> IO Bool
 setVariable conn report path value = withTransaction conn $ do
+  traceShowM (report, path, value)
   let endOfPath = take 2 $ reverse path
   report' <- case endOfPath of
     i@(IndexArr _):_ -> getParentReport conn i
@@ -89,14 +91,16 @@ setVariable conn report path value = withTransaction conn $ do
     then throw $ VisibleError "The changed variable does not belong to the current report"
     else return ()
   case endOfPath of
-    IndexTempVar i:p -> do v <- query conn "SELECT data == ? FROM TemplateVar WHERE id = ?" (value, i)
-                           let parent = case p of
+    IndexTempVar i:p -> do let parent = case p of
                                           [IndexArr p] -> p
                                           [IndexVal p] -> p
                                           [] -> report
-                           case v of
-                             [Only False] -> execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, ?)" (i, parent, value)
-                             _ -> return ()
+                           executeNamed conn "INSERT INTO ReportVar (template, parent, data) \
+                                               \SELECT :template, :parent, :value \
+                                                 \FROM TemplateVar \
+                                                   \WHERE (TemplateVar.data IS NULL OR TemplateVar.data != :value) AND TemplateVar.id = :template \
+                                             \ON CONFLICT(template, parent) DO UPDATE SET data = :value"
+                                                      [":template" := i, ":parent" := parent, ":value" := value]
                            return True
     [IndexVal i] -> execute conn "UPDATE ReportVar SET data = ? WHERE id = ? AND parent = ?" (value, i, report) >> return True
     [IndexArr i] -> execute conn "UPDATE ReportVars SET data = ? WHERE id = ? AND parent = ?" (value, i, report) >> return True
@@ -106,3 +110,24 @@ setVariable conn report path value = withTransaction conn $ do
     [IndexArr i, IndexArr parent] -> execute conn "UPDATE ReportVars SET data = ? WHERE id = ? AND parent = ?" (value, i, parent) >> return True
     [IndexArr i, IndexVal parent] -> execute conn "UPDATE ReportVars SET data = ? WHERE id = ? AND parent = ?" (value, i, parent) >> return True
     _ -> return False
+
+addArray :: Connection -> Int64 -> IndexPathType -> IO IndexPathType
+addArray conn report path = withTransaction conn $ do
+  let reversedPath = reverse path
+      endOfPath = take 2 $ reversedPath
+  report' <- case endOfPath !! 0 of
+               i@(IndexArr _) -> getParentReport conn i
+               i@(IndexVal _) -> getParentReport conn i
+               _ -> return $ Just report
+  if Just report /= report'
+    then throw $ VisibleError "The new array does not belong to the current report"
+    else return ()
+  case endOfPath of
+    IndexTempVars i:p -> do let parent = case p of
+                                           [IndexArr p] -> p
+                                           [IndexVal p] -> p
+                                           [] -> report
+                            executeNamed conn "INSERT INTO ReportVars (template, parent, weight) VALUES (:template, :parent, (SELECT MAX((SELECT weight FROM ReportVars WHERE parent = :parent UNION SELECT 0)) + 1))" [":template" := i, ":parent" := parent]
+                            newIndex <- lastInsertRowId conn
+                            return $ reverse $ IndexArr newIndex:drop 1 reversedPath
+    _ -> throw $ VisibleError "Not yet implemented"

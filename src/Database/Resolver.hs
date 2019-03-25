@@ -8,18 +8,19 @@ import Database.SQLite.Simple
 import Database.SQLite.Simple.FromRow
 import Database.SQLite.Simple.ToRow
 import Data.IORef (newIORef, readIORef, atomicModifyIORef')
+import Data.Int (Int64)
 
 import qualified Data.Text as Text
 import qualified Data.Map as Map
 
 import Debug.Trace
 
-getVariable :: Connection -> TemplateVarParent -> Int -> IO [(Int, Maybe Int, Text.Text, Maybe Text.Text)]
+getVariable :: Connection -> TemplateVarParent -> Int64 -> IO [(Int64, Maybe Int64, Text.Text, Maybe Text.Text)]
 getVariable conn template parent = do
   let (target, val) = templateParentName template
   query conn (Query $ Text.concat ["SELECT TemplateVar.id, ReportVar.id, TemplateVar.name, CASE WHEN ReportVar.data IS NOT NULL THEN ReportVar.data ELSE TemplateVar.data END AS data FROM TemplateVar LEFT JOIN ReportVar ON ReportVar.template == TemplateVar.id AND ReportVar.parent == ? WHERE TemplateVar.", target, " == ?"]) (parent, val)
 
-getVariables :: Connection -> TemplateVarParent -> Int -> IO [(Int, Text.Text, [(Int, Text.Text)])]
+getVariables :: Connection -> TemplateVarParent -> Int64 -> IO [(Int64, Text.Text, [(Int64, Maybe Text.Text)])]
 getVariables conn template parent = do
   let (target, val) = case template of
                         TemplateVarParent i -> ("template", i)
@@ -39,7 +40,7 @@ getValue conn report var = do
 getValues conn report var = do
   query conn "SELECT * FROM ReportVars WHERE report == ? AND parent == ?" (report, var)
 
-getReport :: Connection -> Int -> IO (Maybe (Report, IOReportContext))
+getReport :: Connection -> Int64 -> IO (Maybe (Report, IOReportContext))
 getReport conn reportId = do
   var <- query conn "SELECT Report.id, Report.name, Template.* FROM Report LEFT JOIN Template ON Report.template == Template.id WHERE Report.id = ?" (Only reportId)
   context <- newIORef $ ReportContext { reportContextId = reportId, reportContextVariable = Map.empty, reportContextCustomVariable = Map.empty }
@@ -66,7 +67,7 @@ includeTemplateVariables conn context key template = do
             v' <- flip mapM v $ \(rId, val) -> do
                 let path' = path ++ [IndexArr rId]
                 others <- findVariablesRecursive (TemplateVarParentVars tempId) rId path'
-                return $ ReportVar { reportVarVariables = others, reportVarValue = Just (path', Just val), reportVarArray = Nothing }
+                return $ ReportVar { reportVarVariables = others, reportVarValue = Just (path', val), reportVarArray = Nothing }
             return (name, ReportVar { reportVarVariables = Map.empty, reportVarValue = Nothing, reportVarArray = Just (path ++ [IndexTempVars tempId], v') })
         let merged = Map.unionWith (\var vars -> var { reportVarArray = reportVarArray vars }) (Map.fromList var') (Map.fromList vars')
         return merged
@@ -91,18 +92,18 @@ getTemplates :: Connection -> IO [Template]
 getTemplates conn = query_ conn "SELECT * FROM Template" :: IO [Template]
 
 type TemplateVarTree = ([TemplateVars], [TemplateVar])
-data TemplateVars = TemplateVars { templateVarsId :: Int
+data TemplateVars = TemplateVars { templateVarsId :: Int64
                                  , templateVarsName :: Text.Text
                                  , templateVarsDescription :: Maybe Text.Text
                                  , templateVarsChildren :: TemplateVarTree } deriving Show
 
-data TemplateVar = TemplateVar { templateVarId :: Int
+data TemplateVar = TemplateVar { templateVarId :: Int64
                                , templateVarName :: Text.Text
                                , templateVarDescription :: Maybe Text.Text
                                , templateVarDefault :: Maybe Text.Text
                                , templateVarChildren :: TemplateVarTree } deriving Show
 
-getTemplateAndVariables :: Connection -> Int -> IO (Maybe (Template, TemplateVarTree))
+getTemplateAndVariables :: Connection -> Int64 -> IO (Maybe (Template, TemplateVarTree))
 getTemplateAndVariables conn id = do
   template <- query conn "SELECT * FROM Template WHERE Template.id == ?" (Only id) :: IO [Template]
   case template of

@@ -22,6 +22,7 @@ description:         Please see the README on GitHub at <https://github.com/Ofen
 dependencies:
 - alfred-margaret
 - base >= 4.7 && < 5
+- base16-bytestring
 - bytestring
 - containers
 - cookie

@@ -9,6 +9,7 @@ import Database.Writer
 import Database.Types
 import Csrf
 import Redirect
+import SignedData
 
 import Text.Ginger.GVal (toGVal, ToGVal(..), dict, fromFunction)
 import Text.Ginger.Run (liftRun, runtimeErrorMessage)
@@ -42,7 +43,7 @@ listReports context req f = do
       lookup name = case name of
                       "reports" -> return $ toGVal reports
                       _ -> return $ def
-  result <- runTemplate "list_reports" lookup
+  result <- runTemplate Nothing "list_reports" lookup
   f $ responseText status200 [("Content-Type", "text/html")] result
 
 data TemplateDataFields = DataFieldBuilder { fieldCheckbox :: [Text.Text],
@@ -50,7 +51,7 @@ data TemplateDataFields = DataFieldBuilder { fieldCheckbox :: [Text.Text],
                                              fieldFile :: [Text.Text] }
                         | DataFieldAlreadyUsed deriving (Show, Read)
 
-dataFieldModifier ref func = do
+dataFieldModifier hmac ref func = do
   let modify modifier val = case val of
                               [(_, value)] -> liftRun $ atomicModifyIORef' ref $ \ref -> (modifier ref $ asText value, value)
                               _ -> throw $ VisibleError $ Text.concat ["Incorrect use of function ", func]
@@ -64,24 +65,24 @@ dataFieldModifier ref func = do
                                                      \ref -> case ref of
                                                                var@DataFieldBuilder { fieldCheckbox = cb
                                                                                 , fieldValue = tb
-                                                                                , fieldFile = fs } -> (DataFieldAlreadyUsed, Just $ show var)
+                                                                                , fieldFile = fs } -> (DataFieldAlreadyUsed, Just $ show $ signData hmac var)
                                                                DataFieldAlreadyUsed -> (DataFieldAlreadyUsed, Nothing)
                                   case key of
                                     Nothing -> throw $ VisibleError "Fields has already been signed"
                                     Just j -> return $ toGVal j
     _ -> throw $ VisibleError $ Text.concat ["Variable ", func, " does not exist"]
 
-editReport :: Int -> [Text.Text] -> CsrfFormApplication
+editReport :: Int64 -> [Text.Text] -> CsrfFormApplication
 editReport id args csrf context req f = do
   reportAndVars <- getReport (sessionDbConn context) id
   toSaveMvar <- newIORef $ DataFieldBuilder { fieldCheckbox = [], fieldValue = [], fieldFile = [] }
   case reportAndVars of
     Nothing -> throw $ VisibleErrorWithStatus status404 "Could not find report"
-    Just (report, context) -> do
+    Just (report, context') -> do
       let lookup :: VarName -> Run p IO Html (GVal (Run p IO Html))
           lookup name = case name of
                           "report" -> return $ toGVal report
-                          "variables" -> liftRun $ readIORef context >>= return . toGVal . (Map.map IndexedReportVar) . reportContextVariable
+                          "variables" -> liftRun $ readIORef context' >>= return . toGVal . (Map.map IndexedReportVar) . reportContextVariable
                           "custom_variables" -> return $ toGVal [("image_1", "no")]
                           "csrf" -> return $ toGVal csrf
                           "args" -> return $ toGVal args
@@ -94,14 +95,21 @@ editReport id args csrf context req f = do
                           --                                         IndexArr i -> throw $ VisibleError "Not yet implemented."
                           --                                         _ -> throw $ VisibleError "Invalid report ID."
                           --                                     _ -> throw $ VisibleError "Function delete_template_var expects one named variable, (delete_id=varid)"
-                          _ -> dataFieldModifier toSaveMvar name
-      result <- runTemplate "edit_report" lookup
+                          _ -> dataFieldModifier (sessionHasher context) toSaveMvar name
+          includer parent name = case Text.splitOn "/" $ Text.pack name of
+                                   [".", "default"] -> parent name
+                                   [".", "template_curr"] -> return $ Just $ Text.unpack $ templateEditor $ reportTemplate report
+                                   ["template", sub] -> return $ Just $ Text.unpack $ templateEditor $ reportTemplate report
+                                   x -> traceShow x $ return Nothing
+      result <- runTemplate (Just includer) "edit_report" lookup
       f $ responseText status200 [("Content-Type", "text/html")] result
     
-saveReport :: Int -> CsrfVerifiedApplication
+saveReport :: Int64 -> CsrfVerifiedApplication
 saveReport id (params, files) context req f = do
   variables <- case lookup "fields" params of
-                 Just f -> return $ (read $ Text.unpack f :: TemplateDataFields)
+                 Just f -> case getSignedData (sessionHasher context) (read $ Text.unpack f) of
+                             Just v -> return $ v
+                             Nothing -> throw $ VisibleError "I don't think that's something I signed..."
                  Nothing -> throw $ VisibleError "No fields received"
   flip mapM (fieldValue variables) $ \variable -> do
     setVariable (sessionDbConn context) id (read $ Text.unpack variable) $ lookup variable params
@@ -115,16 +123,11 @@ saveReport id (params, files) context req f = do
                   then return True
                   else setVariable (sessionDbConn context) id (read $ Text.unpack file) $ Encoding.decodeUtf8 $ LC8.toStrict $ fileContent f
       Nothing -> return True
-  -- _ <- flip (changeTemplate $ sessionDbConn context) id $ \t ->
-  --              case t of
-  --                Nothing -> (Nothing, False)
-  --                Just t -> (Just $ t { templateIncludable = case lookup "includable" params of
-  --                                                             Just s -> read (Text.unpack s) :: Int
-  --                                                             Nothing -> templateIncludable t
-  --                                    , templateSource = case lookup "source" params of
-  --                                                         Just s -> s
-  --                                                         Nothing -> templateSource t
-  --                                    , templateEditor = case lookup "editor" params of
-  --                                                         Just s -> s
-  --                                                         Nothing -> templateEditor t }, True)
   redirectSame req f
+
+reportAddList rid (params, _) context req f = do
+  variables <- case lookup "idx" params of
+                 Just a -> return $ read $ Text.unpack a
+                 Nothing -> throw $ VisibleError "No list to add"
+  _ <- addArray (sessionDbConn context) rid variables
+  redirectBack req f

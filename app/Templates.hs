@@ -52,10 +52,10 @@ listTemplates context req f = do
       lookup name = case name of
                       "templates" -> return $ toGVal templates
                       _ -> return def
-  result <- runTemplate "list_templates" lookup
+  result <- runTemplate Nothing "list_templates" lookup
   f $ responseText status200 [("Content-Type", "text/html")] result
     
-editTemplate :: Int -> CsrfFormApplication
+editTemplate :: Int64 -> CsrfFormApplication
 editTemplate id csrf context req f = do
   tempAndVars <- getTemplateAndVariables (sessionDbConn context) id
   case tempAndVars of
@@ -67,10 +67,10 @@ editTemplate id csrf context req f = do
                           "variables" -> return $ toGVal variables
                           "csrf" -> return $ toGVal csrf
                           _ -> return def
-      result <- runTemplate "edit_template" lookup
+      result <- runTemplate Nothing "edit_template" lookup
       f $ responseText status200 [("Content-Type", "text/html")] result
     
-editTemplate_ :: Int -> CsrfVerifiedApplication
+editTemplate_ :: Int64 -> CsrfVerifiedApplication
 editTemplate_ id (params, _) context req f = do
   _ <- flip (changeTemplate $ sessionDbConn context) id $ \t ->
                case t of
@@ -91,7 +91,7 @@ promptDeleteTemplateVariable tid varid csrf context req f = do
                       "csrf" -> return $ toGVal csrf
                       "template_id" -> return $ toGVal tid
                       _ -> return def
-  result <- runTemplate "delete_template_var" lookup
+  result <- runTemplate Nothing "delete_template_var" lookup
   f $ responseText status200 [("Content-Type", "text/html")] result
 
 promptDeleteTemplateVariable_ tid varid _ context req f = do
@@ -104,7 +104,7 @@ addTemplateVar tid parent new csrf context req f = do
                       ("type", TemplateVarParentVars _) -> return $ toGVal ("list" :: Text.Text)
                       ("type", TemplateVarParentVar _) -> return $ toGVal ("val" :: Text.Text)
                       _ -> return def
-  result <- runTemplate "add_template_variable" lookup
+  result <- runTemplate Nothing "add_template_variable" lookup
   f $ responseText status200 [("Content-Type", "text/html")] result
 
 addTemplateVar_ tid parent new (params, _) context req f = do

@@ -13,11 +13,11 @@ import Csrf
 import Network.Wai (Application, responseLBS, responseFile, requestMethod, pathInfo, Response, Middleware)
 import Network.Wai.Session (withSession)
 import Network.Wai.Session.Map (mapStore_)
-import Network.Wai.Handler.Warp (defaultSettings, setPort, setOnExceptionResponse)
+import Network.Wai.Handler.Warp (defaultSettings, setPort, setServerName)
 import Network.Wai.Handler.WebSockets (websocketsOr)
 import Network.WebSockets.Connection (defaultConnectionOptions)
 import Network.Wai.Handler.WarpTLS (runTLS, tlsSettings)
-import Web.Cookie (SetCookie(setCookieSecure, setCookieHttpOnly))
+import Web.Cookie (SetCookie(setCookieSecure, setCookieHttpOnly, setCookiePath))
 import Data.Default.Class
 import Network.HTTP.Types (status200, status404, status500, Status(statusCode))
 import Data.Maybe (fromJust, fromMaybe)
@@ -60,21 +60,23 @@ app sess req f = do
 
     -- List and edit reports
     ("GET", ["report"], Just _) -> call $ listReports
-    ("GET", "report":id:args, Just _) -> call $ withCsrf $ editReport (read $ Text.unpack id :: Int) args
-    ("POST", ["report", id], Just _) -> call $ verifyCsrf $ saveReport (read $ Text.unpack id :: Int)
+    ("GET", "report":id:args, Just _) -> call $ withCsrf $ editReport (read $ Text.unpack id :: Int64) args
+    ("POST", ["report", id], Just _) -> call $ verifyCsrf $ saveReport (read $ Text.unpack id :: Int64)
+    ("POST", ["report", id, "list", "add"], Just _) -> call $ verifyCsrf $ reportAddList (read $ Text.unpack id :: Int64)
+    -- ("POST", ["report", id, "list", "remove"], Just _) -> call $ verifyCsrf $ reportRemoveList (read $ Text.unpack id :: Int64)
     
     -- List and edit templates
     ("GET", ["template"], Just _) -> call $ listTemplates
-    ("GET", ["template", id], Just _) -> call $ withCsrf $ editTemplate (read $ Text.unpack id :: Int)
-    ("POST", ["template", id], Just _) -> call $ verifyCsrf $ editTemplate_ (read $ Text.unpack id :: Int)
+    ("GET", ["template", id], Just _) -> call $ withCsrf $ editTemplate (read $ Text.unpack id :: Int64)
+    ("POST", ["template", id], Just _) -> call $ verifyCsrf $ editTemplate_ (read $ Text.unpack id :: Int64)
 
     -- Add subvariables
     ("GET", ["template", id, parent_type, varid, "add", add_type], Just _) -> do newType <- toTemplateParent add_type "0"
                                                                                  parentType <- toTemplateParent parent_type varid
-                                                                                 call $ withCsrf $ addTemplateVar (read $ Text.unpack id :: Int) parentType newType
+                                                                                 call $ withCsrf $ addTemplateVar (read $ Text.unpack id :: Int64) parentType newType
     ("POST", ["template", id, parent_type, varid, "add", add_type], Just _) -> do newType <- toTemplateParent add_type "0" 
                                                                                   parentType <- toTemplateParent parent_type varid
-                                                                                  call $ verifyCsrf $ addTemplateVar_ (read $ Text.unpack id :: Int) parentType newType
+                                                                                  call $ verifyCsrf $ addTemplateVar_ (read $ Text.unpack id :: Int64) parentType newType
     -- Add top variables
     ("GET", ["template", id, "add", add_type], Just _) -> do newType <- toTemplateParent add_type "0"
                                                              let id' = read $ Text.unpack id
@@ -83,8 +85,8 @@ app sess req f = do
                                                               let id' = read $ Text.unpack id
                                                               call $ verifyCsrf $ addTemplateVar_ id' (TemplateVarParent id') newType
     -- Delete template variable
-    ("GET", ["template", id, _type, varid, "delete"], Just _) -> toTemplateParent _type varid >>= call . withCsrf . (promptDeleteTemplateVariable (read $ Text.unpack id :: Int))
-    ("POST", ["template", id, _type, varid, "delete"], Just _) -> toTemplateParent _type varid >>= call . verifyCsrf . (promptDeleteTemplateVariable_ (read $ Text.unpack id :: Int))
+    ("GET", ["template", id, _type, varid, "delete"], Just _) -> toTemplateParent _type varid >>= call . withCsrf . (promptDeleteTemplateVariable (read $ Text.unpack id :: Int64))
+    ("POST", ["template", id, _type, varid, "delete"], Just _) -> toTemplateParent _type varid >>= call . verifyCsrf . (promptDeleteTemplateVariable_ (read $ Text.unpack id :: Int64))
 
     _ -> throw $ VisibleErrorWithStatus status404 "Could not find this site."
 
@@ -100,7 +102,7 @@ showErrors other req f = do
                        Just (VisibleError msg) -> (status500, [("exception", toGVal msg), ("status", toGVal (500 :: Int))])
                        Just (VisibleErrorWithStatus status msg) -> (status, [("exception", toGVal msg), ("status", toGVal $ statusCode status)])
                        _ -> throw err
-      result <- try (runTemplate "exception" $ \k -> return $ fromMaybe def $ lookup k db) :: IO (Either VisibleError Text.Text)
+      result <- try (runTemplate Nothing "exception" $ \k -> return $ fromMaybe def $ lookup k db) :: IO (Either VisibleError Text.Text)
       case result of
         Right result' -> f $ responseText status [("Content-Type", "text/html")] result'
         Left _ -> f $ responseText status500 [] "Something went screwy, and before you knew he was trying to kill everyone."
@@ -112,9 +114,9 @@ main = do
              return $ initialize $ C8.pack key
   db <- openDatabase
   port <- lookup "PORT" <$> getEnvironment
-  let settings = maybe defaultSettings (\p -> setPort (read p) defaultSettings) port
+  let settings = setServerName C8.empty $ maybe defaultSettings (\p -> setPort (read p) defaultSettings) port
   runTLS (tlsSettings "new.cert.cert" "new.cert.key") settings $ showErrors
-                                                               $ withSession store "sess" (def { setCookieHttpOnly = True, setCookieSecure = True }) session
+                                                               $ withSession store "sess" (def { setCookieHttpOnly = True, setCookieSecure = True, setCookiePath = Just "/" }) session
                                                                $ websocketsOr defaultConnectionOptions sockServer
                                                                $ app $ Session { sessionDbConn = db
                                                                                , sessionSession = session

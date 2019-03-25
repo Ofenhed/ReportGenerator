@@ -4,15 +4,21 @@
 {% macro make_textarea(var) -%}
   <textarea name="{{ add_value(var.idx) }}">{{ var.val }}</textarea>
 {%- endmacro %}
+{% macro add_list_button(list, caption) %}
+  <button type="button" onclick='javascript:execute_add_list({{list.idx|json|raw}})'>{{caption}}</button>
+{% endmacro %}
+{% macro remove_list_button(list, caption) %}
+  <button type="button" onclick='javascript:execute_remove_list({{list.idx|json|raw}})'>{{caption}}</button>
+{% endmacro %}
 {% macro renderEditor() -%}
-  {{ eval(src=report.editor, context={"variables": variables, "report": report, "make_text": make_text, "make_textarea": make_textarea, "add_checkbox": add_checkbox, "add_file": add_file, "add_value": add_value, "args": args, "rpc": rpc, "csrf": csrf}) }}
+  {{ eval(src=report.editor, context={"variables": variables, "report": report, "make_text": make_text, "make_textarea": make_textarea, "add_checkbox": add_checkbox, "add_file": add_file, "add_value": add_value, "args": args, "rpc": rpc, "csrf": csrf, "add_list_button": add_list_button, "remove_list_button": remove_list_button}) }}
 {%- endmacro %}
 {% if rpc == 0 %}
   {% set title = "test<script>" %}
   {% include "default" %}
   <form method="post" enctype="multipart/form-data" action="/report/{{report.id}}">
   <div style="border: 1px solid #0f0">
-    {{ renderEditor() }}
+  {% include "template_curr" %}
   </div>
   <input type="hidden" name="fields" value="{{signed_fields()}}">
   <input type="hidden" name="csrf" value="{{csrf}}">
@@ -20,7 +26,37 @@
   </form>
   
   Executed: <pre style="border: 1px solid #000">{{ report.editor }}</pre>
-  
+
+  <script>
+    function execute_add_list(idx) {
+      var form = document.createElement("form");
+      form.action = "/report/{{report.id}}/list/add";
+      form.method = "post";
+      [["idx", idx], ["csrf", "{{csrf}}"]].forEach(function (e) {
+        var i = document.createElement("input");
+        i.type = "hidden";
+        i.name = e[0];
+        i.value = e[1];
+        form.appendChild(i);
+      });
+      document.body.appendChild(form);
+      form.submit();
+    }
+    function execute_remove_list(idx) {
+      var form = document.createElement("form");
+      form.action = "/report/{{report.id}}/list/add";
+      form.method = "post";
+      [["idx", idx], ["csrf", "{{csrf}}"]].forEach(function (e) {
+        var i = document.createElement("input");
+        i.type = "hidden";
+        i.name = e[0];
+        i.value = e[1];
+        form.appendChild(i);
+      });
+      document.body.appendChild(form);
+      form.submit();
+    }
+  </script>
   {{ endTemplate() }}
 {% else %}
   {{ renderEditor() }}

@@ -27,6 +27,8 @@ import qualified Data.Text.AhoCorasick.Replacer as Replacer
 import Control.Monad.Writer (execWriter, tell)
 import Control.DeepSeq (deepseq)
 import qualified Data.Map                       as Map
+import Data.Int (Int64)
+
 import Debug.Trace
 
 includeResolver conn context file = do
@@ -34,8 +36,8 @@ includeResolver conn context file = do
     [".", "template", t] -> getTemplate conn context t True >>= return . (maybe Nothing (Just . Text.unpack))
     _ -> return $ Nothing
 
-data ReportState = ReportState { stateReportId :: Int,
-                                 stateTemplateId :: Int,
+data ReportState = ReportState { stateReportId :: Int64,
+                                 stateTemplateId :: Int64,
                                  stateHeadingState :: IOHeading,
                                  stateDbConn :: Connection }
 
