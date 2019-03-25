@@ -2,6 +2,7 @@
 module Database.Writer where
 
 import Database.Types
+import Database.Resolver
 import Types
 
 import Database.SQLite.Simple
@@ -13,6 +14,8 @@ import Data.IORef (newIORef, readIORef, atomicModifyIORef')
 
 import qualified Data.Text as Text
 import qualified Data.Map as Map
+
+import Debug.Trace
 
 changeTemplate :: Connection -> (Maybe Template -> (Maybe Template, a)) -> Int -> IO a
 changeTemplate conn f id = do
@@ -73,11 +76,26 @@ addTemplateArray conn parent name = let (parentType, idx) = templateParentName p
                                       in execute conn (Query $ Text.concat ["INSERT INTO TemplateVars (", parentType, ", name) VALUES (?, ?)"]) (idx, name)
 
 setVariable :: (FromField a, ToField a) => Connection -> Int -> IndexPathType -> a -> IO Bool
-setVariable conn report path value = do
-  case take 2 $ reverse path of
-    [IndexTempVar i] -> do v <- query conn "SELECT data == ? FROM TemplateVar WHERE id = ?" (value, i)
+setVariable conn report path value = withTransaction conn $ do
+  let endOfPath = take 2 $ reverse path
+  report' <- case endOfPath of
+    i@(IndexArr _):_ -> getParentReport conn i
+    i@(IndexVal _):_ -> getParentReport conn i
+    (IndexTempVar _):[i] -> getParentReport conn i
+    (IndexTempVars _):[i] -> getParentReport conn i
+    (IndexTempVar _):[] -> return $ Just report
+    (IndexTempVars _):[] -> return $ Just report
+  if Just report /= report'
+    then throw $ VisibleError "The changed variable does not belong to the current report"
+    else return ()
+  case endOfPath of
+    IndexTempVar i:p -> do v <- query conn "SELECT data == ? FROM TemplateVar WHERE id = ?" (value, i)
+                           let parent = case p of
+                                          [IndexArr p] -> p
+                                          [IndexVal p] -> p
+                                          [] -> report
                            case v of
-                             [Only False] -> execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, ?)" (i, report, value)
+                             [Only False] -> execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, ?)" (i, parent, value)
                              _ -> return ()
                            return True
     [IndexVal i] -> execute conn "UPDATE ReportVar SET data = ? WHERE id = ? AND parent = ?" (value, i, report) >> return True

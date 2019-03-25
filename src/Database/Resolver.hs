@@ -132,3 +132,62 @@ getTemplateAndVariables conn id = do
       
 getReports :: Connection -> IO [Report]
 getReports conn = query_ conn "SELECT Report.id, Report.name, Template.* FROM Report LEFT JOIN Template ON Template.id == Report.template"
+
+getParentReport conn idx = do
+  let (first_select, i) = case idx of
+                     IndexVal i -> ("ReportVar.parent, TemplateVar.templateVar, TemplateVar.templateVars, NULL, NULL, Report.id FROM \
+                                    \ReportVar, TemplateVar \
+                                    \LEFT JOIN Report ON Report.id = ReportVar.parent AND TemplateVar.template IS NOT NULL \
+                                    \WHERE ReportVar.id = ? AND TemplateVar.id = ReportVar.template", i)
+                     IndexArr i -> ("ReportVars.parent, NULL, NULL, TemplateVars.templateVar, TemplateVars.templateVars, Report.id FROM \
+                                    \ReportVars, TemplateVars \
+                                    \LEFT JOIN Report ON Report.id = ReportVars.parent AND TemplateVars.template IS NOT NULL \
+                                    \WHERE ReportVars.id = ? AND TemplateVars.id = ReportVars.template", i)
+  parent_id <- query conn (Query $ Text.concat
+               ["WITH RECURSIVE p_tree(p, vv, va, av, aa, parent) AS \
+                \(SELECT ", first_select,
+                " UNION SELECT \
+                         \(CASE WHEN ReportVar.id IS NOT NULL THEN ReportVar.parent ELSE ReportVars.parent END) AS report_parent, \
+                         \TemplateVar.templateVar, TemplateVar.templateVars, \
+                         \TemplateVars.templateVar, TemplateVars.TemplateVars, \
+                         \Report.id \
+                       \FROM p_tree \
+                         \LEFT JOIN TemplateVars ON TemplateVars.id = va OR TemplateVars.id = aa \
+                         \LEFT JOIN TemplateVar ON TemplateVar.id = vv OR TemplateVar.id = av \
+                         \LEFT JOIN ReportVars ON ReportVars.id = p_tree.p AND ReportVars.template = TemplateVars.id \
+                         \LEFT JOIN ReportVar ON ReportVar.id = p_tree.p AND ReportVar.template = TemplateVar.id \
+                         \LEFT JOIN Report ON Report.id = report_parent AND \
+                                    \(TemplateVar.template IS NOT NULL OR TemplateVars.template IS NOT NULL) \
+                       \WHERE report_parent IS NOT NULL) \
+                \SELECT parent FROM p_tree WHERE parent IS NOT NULL"]) (Only i)
+  case parent_id of
+    [Only p] -> return $ Just p
+    [] -> return Nothing
+
+getParentTemplate conn idx = do
+  let (first_select, i) = case idx of
+                     IndexVal i -> ("TemplateVar.templateVar, TemplateVar.templateVars, NULL, NULL, Template.id FROM \
+                                    \ReportVar, TemplateVar \
+                                    \LEFT JOIN Template ON Template.id = TemplateVar.template \
+                                    \WHERE ReportVar.id = ? AND TemplateVar.id = ReportVar.template", i)
+                     IndexArr i -> ("NULL, NULL, TemplateVars.templateVar, TemplateVars.templateVars, Template.id FROM \
+                                    \ReportVars, TemplateVars \
+                                    \LEFT JOIN Template ON Template.id = TemplateVars.template \
+                                    \WHERE ReportVars.id = ? AND TemplateVars.id = ReportVars.template", i)
+                     IndexTempVar i -> ("?, NULL, NULL, NULL, NULL", i)
+                     IndexTempVars i -> ("NULL, ?, NULL, NULL, NULL", i)
+  template_id <- query conn (Query $ Text.concat
+                 ["WITH RECURSIVE p_tree(vv, va, av, aa, parent) AS \
+                  \(SELECT ", first_select,
+                  " UNION SELECT \
+                           \TemplateVar.templateVar, TemplateVar.templateVars, \
+                           \TemplateVars.templateVar, TemplateVars.templateVars, \
+                           \Template.id \
+                         \FROM p_tree \
+                           \LEFT JOIN TemplateVars ON TemplateVars.id = va OR TemplateVars.id = aa \
+                           \LEFT JOIN TemplateVar ON TemplateVar.id = vv OR TemplateVar.id = av \
+                           \LEFT JOIN Template ON Template.id = TemplateVars.template OR Template.id = TemplateVar.template) \
+                  \SELECT parent FROM p_tree WHERE parent IS NOT NULL;"]) (Only i)
+  case template_id of
+    [Only p] -> return $ Just p
+    [] -> return Nothing
