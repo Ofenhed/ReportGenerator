@@ -29,8 +29,6 @@ import qualified Data.ByteString.Char8          as C8
 import qualified Data.Text.Encoding             as Encoding
 import qualified Data.Text                      as Text
 
-import Debug.Trace
-
 instance ToGVal m User where
   toGVal u = def { isNull = False
                  , asText = asText $ toGVal $ userUsername u
@@ -60,7 +58,7 @@ runTemplate context fetcher filename lookup = do
         Right parsed' -> do
           vec <- newIORef $ D.empty
           let lookup' name = case name of
-                          "user" -> return $ toGVal $ traceShowId $ sessionUser context
+                          "user" -> return $ toGVal $ sessionUser context
                           "None" -> return $ toGVal $ (Nothing :: Maybe Int)
                           _ -> lookup name
               context' = makeContextHtmlM lookup' (\n -> atomicModifyIORef' vec (\state -> (D.snoc state n, ())))

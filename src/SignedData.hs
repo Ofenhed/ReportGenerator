@@ -9,8 +9,6 @@ import Data.ByteArray ()
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Base16 as Hex
 
-import Debug.Trace
-
 data SignedData a h = Signed a (Digest h)
 
 signData hmac d = let toSign = C8.pack $ show d

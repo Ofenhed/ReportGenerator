@@ -85,7 +85,7 @@
   <body>
   {% if user.id %}
     <div class="header-left"><a href="/template">Templates</a> <a href="/report">Reports</a></div>
-    <div class="header-right">{{ user }} <a href="/logout">Log out</a></div>
+    <div class="header-right"><a href="/user">{{ user }}</a> <a href="/logout">Log out</a></div>
   {% else %}
     <div class="header-right"><a href="/login">Log in</a></div>
   {% endif %}

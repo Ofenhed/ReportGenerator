@@ -6,13 +6,12 @@ import Redirect
 import TemplateFiles
 import Database.Types
 import Database.Resolver
+import Database.Writer
 import Csrf
 import Network.Wai (vault)
 
 import qualified Data.Vault.Lazy                as Vault
 import qualified Data.Text                      as Text
-
-import Debug.Trace
 
 doLogOut context req = do
   let Just (_, sessionInsert) = Vault.lookup (sessionSession context) (vault req)
@@ -34,7 +33,7 @@ loggedInUser context req = do
                   case user' of
                     Nothing -> doLogOut context req
                     _ -> return ()
-                  return $ traceShowId user'
+                  return user'
                 _ -> return Nothing
 
 showLogin :: CsrfFormApplication
@@ -56,3 +55,20 @@ showLogin_ (params, _) context req f = do
                                redirect "/" req f
                              Nothing -> redirectSame req f
     _ -> throw $ VisibleError "Now, what am I supposed to do with that?"
+
+userPage :: CsrfFormApplication
+userPage csrf context req f = do
+  let lookup name = case name of
+                      "csrf" -> return $ toGVal csrf
+                      _ -> return def
+  page <- runTemplate context Nothing "user" lookup
+  f $ responseText status200 [(hContentType, "text/html")] page
+
+userPage_ :: CsrfVerifiedApplication
+userPage_ (params, _) context req f = do
+  case (lookup "oldPass" params, lookup "newPass" params, lookup "newPassAgain" params, sessionUser context) of
+    (Just old, Just new, Just new2, Just user) -> do
+      if Text.null old || Text.null new || new /= new2
+        then redirectSame req f
+        else updateUserPassword (sessionDbConn context) (userUsername user) old new >>= \success -> redirect "/" req f
+    _ -> redirectSame req f

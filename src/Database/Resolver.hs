@@ -15,8 +15,6 @@ import qualified Data.Text            as Text
 import qualified Data.Map             as Map
 import qualified Data.Text.Encoding   as Encoding
 
-import Debug.Trace
-
 getVariable :: Connection -> TemplateVarParent -> Int64 -> IO [(Int64, Maybe Int64, Text.Text, Maybe Text.Text)]
 getVariable conn template parent = do
   let (target, val) = templateParentName template
@@ -80,7 +78,6 @@ includeTemplateVariables conn context key template = do
 
 getTemplate :: Connection -> IOReportContext -> Text.Text -> Bool -> IO (Maybe Text.Text)
 getTemplate conn context template included = do
-  traceShowM template
   var <- query conn "SELECT id, includeName, source FROM Template WHERE includeName = ? AND (? = 0 OR includable = 1)" (template, included)
   context' <- readIORef context
   case var of
@@ -94,7 +91,6 @@ getTemplate conn context template included = do
 
 getTemplateEditor :: Connection -> IOReportContext -> Text.Text -> Bool -> IO (Maybe Text.Text)
 getTemplateEditor conn context template included = do
-  traceShowM template
   var <- query conn "SELECT id, includeName, editor FROM Template WHERE includeName = ? AND (? = 0 OR includable = 1)" (template, included)
   context' <- readIORef context
   case var of

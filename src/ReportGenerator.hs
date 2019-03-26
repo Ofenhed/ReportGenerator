@@ -29,8 +29,6 @@ import Control.DeepSeq (deepseq)
 import qualified Data.Map                       as Map
 import Data.Int (Int64)
 
-import Debug.Trace
-
 includeResolver conn context file = do
   case Text.splitOn "/" $ Text.pack file of
     [".", "template", t] -> getTemplate conn context t True >>= return . (maybe Nothing (Just . Text.unpack))

@@ -23,8 +23,6 @@ import qualified Data.ByteString.Lazy.Char8 as LC8
 import qualified Data.ByteString.Char8      as C8
 import Safe (headMay)
 
-import Debug.Trace
-
 instance ToGVal m (Map.Map Text.Text (GVal m)) where
   toGVal xs = def { asLookup = Just $ flip Map.lookup xs
                   , isNull = Map.null xs
@@ -104,7 +102,7 @@ editReport id template args csrf context req f = do
                                    [".", "default"] -> parent name
                                    [".", "template_curr"] -> return $ Just $ Text.unpack $ templateEditor $ reportTemplate report
                                    [".", "template", sub] -> getTemplateEditor (sessionDbConn context) context' sub True >>= return . (maybe Nothing $ Just . Text.unpack)
-                                   x -> traceShow x $ return Nothing
+                                   _ -> return Nothing
       result <- runTemplate context (Just includer) "edit_report" lookup
       f $ responseText status200 [(hContentType, "text/html")] result
     

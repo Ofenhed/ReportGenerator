@@ -11,8 +11,6 @@ import Data.Default.Class (def)
 import Network.HTTP.Types (Status)
 import Data.Int (Int64)
 
-import Debug.Trace
-
 data IndexType = IndexVal Int64
                | IndexArr Int64
                | IndexTempVar Int64

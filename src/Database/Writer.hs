@@ -18,8 +18,6 @@ import System.Random (randomRIO)
 import qualified Data.Text as Text
 import qualified Data.Map as Map
 
-import Debug.Trace
-
 changeTemplate :: Connection -> (Maybe Template -> (Maybe Template, a)) -> Int64 -> IO a
 changeTemplate conn f id = do
   template <- query conn "SELECT * FROM Template WHERE id == ?" (Only id)
@@ -80,7 +78,6 @@ addTemplateArray conn parent name = let (parentType, idx) = templateParentName p
 
 setVariable :: (FromField a, ToField a, Show a) => Connection -> Int64 -> IndexPathType -> a -> IO Bool
 setVariable conn report path value = withTransaction conn $ do
-  traceShowM (report, path, value)
   let endOfPath = take 2 $ reverse path
   report' <- case endOfPath of
     i@(IndexArr _):_ -> getParentReport conn i
@@ -142,14 +139,14 @@ addUser conn username password = do
   let salt' = Text.pack salt
   execute conn "INSERT INTO User (username, salt, passhash) VALUES (?, ?, ?)" (username, salt', show $ hashPasswordAndSalt password salt')
 
-updateUser :: Connection -> Text.Text -> Text.Text -> Text.Text -> IO Bool
-updateUser conn username oldpass newpass = withTransaction conn $ do
+updateUserPassword :: Connection -> Text.Text -> Text.Text -> Text.Text -> IO Bool
+updateUserPassword conn username oldpass newpass = withTransaction conn $ do
   u <- getUserWithPassword conn username oldpass
   case u of
     Nothing -> return False
     Just u -> do
       salt <- flip mapM [1..64] $ (\_ -> randomRIO ('0', 'z'))
       let salt' = Text.pack salt
-      execute conn "UPDATE User SET salt = ?, passhash = ? WHERE id = ?" (userId u, salt', show $ hashPasswordAndSalt newpass salt')
+      execute conn "UPDATE User SET salt = ?, passhash = ? WHERE id = ?" (salt', show $ hashPasswordAndSalt newpass salt', userId u)
       c <- changes conn
       return $ c /= 1

@@ -40,8 +40,6 @@ import qualified Database.SQLite.Simple         as DB
 import qualified Data.ByteString.Lazy.Char8     as LC8
 import qualified Data.ByteString.Char8          as C8
 
-import Debug.Trace
-
 staticDir = "static"
 serverDir = "static/server"
 clientDir = "static/client"
@@ -49,7 +47,7 @@ clientDir = "static/client"
 app sess' req f = do
   user <- loggedInUser sess' req
   let sess = sess' { sessionUser = user }
-      call x = x sess req f
+      call x = showErrors sess (x sess) req f
       toTemplateParent "var" i = return $ TemplateVarParentVar $ read $ Text.unpack i
       toTemplateParent "arr" i = return $ TemplateVarParentVars $ read $ Text.unpack i
       toTemplateParent _ _ = throw $ VisibleErrorWithStatus status404 "Now that wasn't very nice, now was it?"
@@ -100,7 +98,10 @@ app sess' req f = do
     ("GET", ["login"], Nothing) -> call $ withCsrf $ showLogin
     ("POST", ["login"], Nothing) -> call $ verifyCsrf $ showLogin_
     ("GET", ["logout"], Just _) -> call $ showLogOut
-    _ -> throw $ VisibleErrorWithStatus status404 "Could not find this site."
+
+    ("GET", ["user"], Just _) -> call $ withCsrf $ userPage
+    ("POST", ["user"], Just _) -> call $ verifyCsrf $ userPage_
+    _ -> showErrors sess (throw $ VisibleErrorWithStatus status404 "Could not find this site.") req f
 
 sockServer _ = return ()
 
