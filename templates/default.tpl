@@ -57,12 +57,41 @@
       div.ul-tree ul.ul-tree.variable > li > label::before {
         content: "\01F4DD"
       }
-      
+      body {
+        max-width: 100%;
+        display: grid;
+        grid-template-columns: auto auto auto;
+        grid-template-rows: auto;
+        grid-template-areas:
+          "headerleft . headerright"
+          "main main main"
+          "help help help"
+      }
+      .header-left {
+        grid-area: headerleft;
+      }
+      .header-right {
+        grid-area: headerright;
+        text-align: right;
+      } 
+      .content {
+        grid-area: main;
+      }
+      pre {
+        white-space: pre-wrap;
+      }
     </style>
   </head>
   <body>
-<a href="/template">Templates</a> <a href="/report">Reports</a>
+  {% if user.id %}
+    <div class="header-left"><a href="/template">Templates</a> <a href="/report">Reports</a></div>
+    <div class="header-right">{{ user }} <a href="/logout">Log out</a></div>
+  {% else %}
+    <div class="header-right"><a href="/login">Log in</a></div>
+  {% endif %}
+    <div class="content">
 {% macro endTemplate() -%}
+    </div>
   </body>
 </html>
 {%- endmacro %}

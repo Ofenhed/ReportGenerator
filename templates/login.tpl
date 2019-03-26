@@ -3,6 +3,7 @@
 <form method="POST">
   <input type="text" name="username">
   <input type="password" name="password">
+  <input type="hidden" name="csrf" value="{{csrf}}">
   <input type="submit" value="Log in">
   </form>
 {{ endTemplate() }}

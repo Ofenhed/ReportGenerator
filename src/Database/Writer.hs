@@ -4,6 +4,7 @@ module Database.Writer where
 import Database.Types
 import Database.Resolver
 import Types
+import UserType
 
 import Database.SQLite.Simple
 import Database.SQLite.Simple.FromRow
@@ -12,6 +13,7 @@ import Database.SQLite.Simple.ToField
 import Database.SQLite.Simple.FromField
 import Data.IORef (newIORef, readIORef, atomicModifyIORef')
 import Data.Int (Int64)
+import System.Random (randomRIO)
 
 import qualified Data.Text as Text
 import qualified Data.Map as Map
@@ -131,3 +133,23 @@ addArray conn report path = withTransaction conn $ do
                             newIndex <- lastInsertRowId conn
                             return $ reverse $ IndexArr newIndex:drop 1 reversedPath
     _ -> throw $ VisibleError "Not yet implemented"
+
+-- Users
+
+addUser :: Connection -> Text.Text -> Text.Text -> IO ()
+addUser conn username password = do
+  salt <- flip mapM [1..64] $ (\_ -> randomRIO ('0', 'z'))
+  let salt' = Text.pack salt
+  execute conn "INSERT INTO User (username, salt, passhash) VALUES (?, ?, ?)" (username, salt', show $ hashPasswordAndSalt password salt')
+
+updateUser :: Connection -> Text.Text -> Text.Text -> Text.Text -> IO Bool
+updateUser conn username oldpass newpass = withTransaction conn $ do
+  u <- getUserWithPassword conn username oldpass
+  case u of
+    Nothing -> return False
+    Just u -> do
+      salt <- flip mapM [1..64] $ (\_ -> randomRIO ('0', 'z'))
+      let salt' = Text.pack salt
+      execute conn "UPDATE User SET salt = ?, passhash = ? WHERE id = ?" (userId u, salt', show $ hashPasswordAndSalt newpass salt')
+      c <- changes conn
+      return $ c /= 1

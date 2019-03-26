@@ -10,6 +10,7 @@ import Database.Types
 import Csrf
 import Redirect
 import SignedData
+import TemplateFiles
 
 import Text.Ginger.GVal (toGVal, ToGVal(..), dict, fromFunction)
 import Text.Ginger.Run (liftRun, runtimeErrorMessage)
@@ -43,8 +44,8 @@ listReports context req f = do
       lookup name = case name of
                       "reports" -> return $ toGVal reports
                       _ -> return $ def
-  result <- runTemplate Nothing "list_reports" lookup
-  f $ responseText status200 [("Content-Type", "text/html")] result
+  result <- runTemplate context Nothing "list_reports" lookup
+  f $ responseText status200 [(hContentType, "text/html")] result
 
 data TemplateDataFields = DataFieldBuilder { fieldCheckbox :: [Text.Text],
                                              fieldValue :: [Text.Text],
@@ -76,6 +77,9 @@ editReport :: Int64 -> Maybe Int64 -> [Text.Text] -> CsrfFormApplication
 editReport id template args csrf context req f = do
   reportAndVars <- getReport (sessionDbConn context) id template
   toSaveMvar <- newIORef $ DataFieldBuilder { fieldCheckbox = [], fieldValue = [], fieldFile = [] }
+  let (rpc, args') = case args of
+                       "rpc":a -> (True, a)
+                       a -> (False, a)
   case reportAndVars of
     Nothing -> throw $ VisibleErrorWithStatus status404 "Could not find report"
     Just (report, context') -> do
@@ -85,8 +89,8 @@ editReport id template args csrf context req f = do
                           "variables" -> liftRun $ readIORef context' >>= return . toGVal . (Map.map IndexedReportVar) . reportContextVariable
                           "custom_variables" -> return $ toGVal [("image_1", "no")]
                           "csrf" -> return $ toGVal csrf
-                          "args" -> return $ toGVal args
-                          "rpc" -> return $ toGVal $ headMay args == Just "rpc"
+                          "args" -> return $ toGVal args'
+                          "rpc" -> return $ toGVal rpc
                           -- "delete_template_var" -> \vars -> case vars of
                           --                                     ["delete_id", var] -> do
                           --                                       let var' = read $ asText var :: IndexPathType
@@ -101,8 +105,8 @@ editReport id template args csrf context req f = do
                                    [".", "template_curr"] -> return $ Just $ Text.unpack $ templateEditor $ reportTemplate report
                                    [".", "template", sub] -> getTemplateEditor (sessionDbConn context) context' sub True >>= return . (maybe Nothing $ Just . Text.unpack)
                                    x -> traceShow x $ return Nothing
-      result <- runTemplate (Just includer) "edit_report" lookup
-      f $ responseText status200 [("Content-Type", "text/html")] result
+      result <- runTemplate context (Just includer) "edit_report" lookup
+      f $ responseText status200 [(hContentType, "text/html")] result
     
 saveReport :: Int64 -> CsrfVerifiedApplication
 saveReport id (params, files) context req f = do

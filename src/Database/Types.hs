@@ -36,6 +36,10 @@ instance FromRow Template where
 instance FromRow Report where
   fromRow = Report <$> field <*> field <*> (Template <$> field <*> field <*> field <*> field <*> field <*> field <*> field)
 
+data User = User { userId :: Int64
+                 , userUsername :: Text.Text
+                 , userPassId :: Int64
+                 , userKey :: Maybe (Text.Text, Text.Text) } deriving Show
 
 setupDatabase conn = withTransaction conn $ do
     execute_ conn "CREATE TABLE IF NOT EXISTS Template (id INTEGER PRIMARY KEY ASC, includeName TEXT NOT NULL, longName TEXT NULL, description TEXT NULL, source TEXT NOT NULL, editor TEXT NOT NULL, includable INTEGER NOT NULL, CONSTRAINT unique_name UNIQUE (includeName));"
@@ -52,6 +56,8 @@ setupDatabase conn = withTransaction conn $ do
     execute_ conn "CREATE TABLE IF NOT EXISTS ReportVar (id INTEGER PRIMARY KEY ASC, template INTEGER NOT NULL, parent INTEGER NOT NULL, data TEXT NULL, iv TEXT NULL, FOREIGN KEY (template) REFERENCES TemplateVar(id), CONSTRAINT no_arrays UNIQUE (template, parent));"
     execute_ conn "CREATE TABLE IF NOT EXISTS ReportVars (id INTEGER PRIMARY KEY ASC, template INTEGER NOT NULL, parent INTEGER NOT NULL, data TEXT NULL, iv TEXT NULL, weight INTEGER NOT NULL, FOREIGN KEY (template) REFERENCES TemplateVars(id), FOREIGN KEY (parent) REFERENCES ReportVar(id));"
     execute_ conn "CREATE TABLE IF NOT EXISTS CustVar (id INTEGER PRIMARY KEY ASC, name TEXT NOT NULL, report INTEGER NOT NULL, data TEXT NULL, iv TEXT NULL, FOREIGN KEY (report) REFERENCES Report(id), CONSTRAINT no_arrays UNIQUE (report, name));"
+    execute_ conn "CREATE TABLE IF NOT EXISTS User (id INTEGER PRIMARY KEY ASC, username TEXT NOT NULL, passhash TEXT NOT NULL, salt TEXT NOT NULL, passid INTEGER NOT NULL DEFAULT 0, publicKey TEXT, privateKey TEXT, CONSTRAINT full_set_of_keys CHECK ((publicKey IS NULL AND privateKey IS NULL) OR (publicKey IS NOT NULL AND privateKey IS NOT NULL)), CONSTRAINT unique_username UNIQUE (username));"
+    execute_ conn "CREATE TRIGGER IF NOT EXISTS user_pass_counter AFTER UPDATE ON User WHEN OLD.passhash != NEW.passhash BEGIN UPDATE User SET passid = OLD.passid + 1 WHERE id = NEW.id; END;"
 
     -- Test data
 

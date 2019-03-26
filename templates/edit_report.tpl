@@ -5,9 +5,15 @@
   <textarea name="{{ add_value(var.idx) }}">{{ var.val }}</textarea>
 {%- endmacro %}
 {% macro add_list_button(list, caption) %}
+  <noscript>
+    This button requires javascript to work.
+  </noscript>
   <button type="button" onclick='javascript:execute_add_list({{list.idx|json|raw}})'>{{caption}}</button>
 {% endmacro %}
 {% macro remove_list_button(list, caption) %}
+  <noscript>
+    This button requires javascript to work.
+  </noscript>
   <button type="button" onclick='javascript:execute_remove_list({{list.idx|json|raw}})'>{{caption}}</button>
 {% endmacro %}
 {% macro renderEditor() -%}
@@ -17,6 +23,7 @@
   {% set title = "test<script>" %}
   {% include "default" %}
   <form method="post" enctype="multipart/form-data" action="/report/{{report.id}}">
+  <h1>{{ report.name }}</h1>
   <div style="border: 1px solid #0f0">
   {% include "template_curr" %}
   </div>
@@ -59,5 +66,5 @@
   </script>
   {{ endTemplate() }}
 {% else %}
-  {{ renderEditor() }}
+  {% include "template_curr" %}
 {% endif %}

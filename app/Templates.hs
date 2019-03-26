@@ -10,6 +10,7 @@ import Database.Writer
 import Database.Types
 import Csrf
 import Redirect
+import TemplateFiles
 
 import Text.Ginger.GVal (toGVal, ToGVal(..), dict)
 import Text.Ginger.Run (liftRun, runtimeErrorMessage)
@@ -52,8 +53,8 @@ listTemplates context req f = do
       lookup name = case name of
                       "templates" -> return $ toGVal templates
                       _ -> return def
-  result <- runTemplate Nothing "list_templates" lookup
-  f $ responseText status200 [("Content-Type", "text/html")] result
+  result <- runTemplate context Nothing "list_templates" lookup
+  f $ responseText status200 [(hContentType, "text/html")] result
     
 editTemplate :: Int64 -> CsrfFormApplication
 editTemplate id csrf context req f = do
@@ -67,8 +68,8 @@ editTemplate id csrf context req f = do
                           "variables" -> return $ toGVal variables
                           "csrf" -> return $ toGVal csrf
                           _ -> return def
-      result <- runTemplate Nothing "edit_template" lookup
-      f $ responseText status200 [("Content-Type", "text/html")] result
+      result <- runTemplate context Nothing "edit_template" lookup
+      f $ responseText status200 [(hContentType, "text/html")] result
     
 editTemplate_ :: Int64 -> CsrfVerifiedApplication
 editTemplate_ id (params, _) context req f = do
@@ -91,8 +92,8 @@ promptDeleteTemplateVariable tid varid csrf context req f = do
                       "csrf" -> return $ toGVal csrf
                       "template_id" -> return $ toGVal tid
                       _ -> return def
-  result <- runTemplate Nothing "delete_template_var" lookup
-  f $ responseText status200 [("Content-Type", "text/html")] result
+  result <- runTemplate context Nothing "delete_template_var" lookup
+  f $ responseText status200 [(hContentType, "text/html")] result
 
 promptDeleteTemplateVariable_ tid varid _ context req f = do
   Database.Writer.deleteTemplateVariable (sessionDbConn context) varid
@@ -104,8 +105,8 @@ addTemplateVar tid parent new csrf context req f = do
                       ("type", TemplateVarParentVars _) -> return $ toGVal ("list" :: Text.Text)
                       ("type", TemplateVarParentVar _) -> return $ toGVal ("val" :: Text.Text)
                       _ -> return def
-  result <- runTemplate Nothing "add_template_variable" lookup
-  f $ responseText status200 [("Content-Type", "text/html")] result
+  result <- runTemplate context Nothing "add_template_variable" lookup
+  f $ responseText status200 [(hContentType, "text/html")] result
 
 addTemplateVar_ tid parent new (params, _) context req f = do
   case (new, lookup "name" params, lookup "value" params) of

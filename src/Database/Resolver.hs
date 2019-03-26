@@ -3,6 +3,7 @@ module Database.Resolver where
 
 import Database.Types
 import Types
+import UserType
 
 import Database.SQLite.Simple
 import Database.SQLite.Simple.FromRow
@@ -10,8 +11,9 @@ import Database.SQLite.Simple.ToRow
 import Data.IORef (newIORef, readIORef, atomicModifyIORef')
 import Data.Int (Int64)
 
-import qualified Data.Text as Text
-import qualified Data.Map as Map
+import qualified Data.Text            as Text
+import qualified Data.Map             as Map
+import qualified Data.Text.Encoding   as Encoding
 
 import Debug.Trace
 
@@ -206,3 +208,26 @@ getParentTemplate conn idx = do
   case template_id of
     [Only p] -> return $ Just p
     [] -> return Nothing
+
+-- User
+
+getUserWithPassword :: Connection -> Text.Text -> Text.Text -> IO (Maybe User)
+getUserWithPassword conn username password = do
+  user <- query conn "SELECT id, salt from User where username = ?" (Only username) :: IO [(Int64, Text.Text)]
+  case user of
+    [] -> return Nothing
+    [(uid, salt)] -> do
+      let hash = hashPasswordAndSalt password salt
+      verifiedUser <- query conn "SELECT id, username, passid, publicKey, privateKey FROM User WHERE id = ? AND passhash = ?" (uid, show hash)
+      case verifiedUser of
+        [] -> return Nothing
+        [(id, name, pass, Just pub, Just priv)] -> return $ Just $ User { userId = id, userUsername = name, userPassId = pass, userKey = Just (pub, priv) }
+        [(id, name, pass, Nothing, Nothing)] -> return $ Just $ User { userId = id, userUsername = name, userPassId = pass, userKey = Nothing }
+
+getLoggedInUser :: Connection -> Int64 -> Int64 -> IO (Maybe User)
+getLoggedInUser conn uid passid = do
+  user <- query conn "SELECT id, username, passid, publicKey, privateKey from User WHERE id = ? AND passid = ?" (uid, passid)
+  case user of
+    [] -> return Nothing
+    [(id, name, pass, Just pub, Just priv)] -> return $ Just $ User { userId = id, userUsername = name, userPassId = pass, userKey = Just (pub, priv) }
+    [(id, name, pass, Nothing, Nothing)] -> return $ Just $ User { userId = id, userUsername = name, userPassId = pass, userKey = Nothing }

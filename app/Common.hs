@@ -1,19 +1,18 @@
 module Common (module Types
               , module Common
-              , module TemplateFiles
               , module Network.HTTP.Types
               , module Text.Ginger.GVal
               , module Text.Ginger.Html
               , module Text.Ginger
               , def) where
 
-import TemplateFiles
 import Types
+import Database.Types
 
 import Network.Wai (Application, responseLBS, responseFile, requestMethod, pathInfo, Response)
 import Network.Wai.Session (withSession)
 import Data.Default.Class (def)
-import Network.HTTP.Types (status200, status404, status500)
+import Network.HTTP.Types (status200, status404, status500, hContentType)
 import Text.Ginger.GVal (toGVal, GVal(..))
 import Text.Ginger (toGVal, VarName, Run)
 import Text.Ginger.Html (Html)
@@ -30,7 +29,8 @@ import qualified Network.Wai.Session as S
 
 data SessionType = Session { sessionDbConn :: Connection
                            , sessionSession :: Vault.Key (S.Session IO Text.Text Text.Text)
-                           , sessionHasher :: Context SHA256 }
+                           , sessionHasher :: Context SHA256
+                           , sessionUser :: Maybe User }
 
 type WebApplication = SessionType -> Application
 

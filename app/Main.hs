@@ -3,12 +3,15 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 import Database.Database
+import Database.Writer
 import ReportGenerator
 import ReportEditor
 import Types
 import Templates
+import TemplateFiles
 import Common
 import Csrf
+import Login
 
 import Network.Wai (Application, responseLBS, responseFile, requestMethod, pathInfo, Response, Middleware)
 import Network.Wai.Session (withSession)
@@ -43,19 +46,23 @@ staticDir = "static"
 serverDir = "static/server"
 clientDir = "static/client"
 
-app sess req f = do
-  let call x = x sess req f
-  let toTemplateParent "var" i = return $ TemplateVarParentVar $ read $ Text.unpack i
+app sess' req f = do
+  user <- loggedInUser sess' req
+  let sess = sess' { sessionUser = user }
+      call x = x sess req f
+      toTemplateParent "var" i = return $ TemplateVarParentVar $ read $ Text.unpack i
       toTemplateParent "arr" i = return $ TemplateVarParentVars $ read $ Text.unpack i
       toTemplateParent _ _ = throw $ VisibleErrorWithStatus status404 "Now that wasn't very nice, now was it?"
-  case (requestMethod req, pathInfo req, Just 1) of
+  case (requestMethod req, pathInfo req, sessionUser sess) of
     -- ("GET", ["static", file]) -> f $ responseFile status200 [] (staticDir </> (takeFileName $ Text.unpack file)) Nothing
     -- -- ("GET", ["server", file]) -> f $ responseFile status200 [] (serverDir </> (takeFileName $ Text.unpack file)) Nothing
     -- -- ("GET", ["client", file]) -> f $ responseFile status200 [] (clientDir </> (takeFileName $ Text.unpack file)) Nothing
     -- ("GET", []) -> call indexPage
+    ("GET", [], _) -> do t <- runTemplate sess Nothing "index" $ \_ -> return def
+                         f $ responseText status200 [(hContentType, "text/html")] t
 
     -- Generate report
-    ("GET", ["report", "generate", id], Just _) -> render (sessionDbConn sess) 1 >>= \rep -> f $ responseText status200 [("Content-Type", "text/html")] rep
+    ("GET", ["report", "generate", id], Just _) -> render (sessionDbConn sess) 1 >>= \rep -> f $ responseText status200 [(hContentType, "text/html")] rep
 
 
     -- List and edit reports
@@ -89,12 +96,16 @@ app sess req f = do
     ("GET", ["template", id, _type, varid, "delete"], Just _) -> toTemplateParent _type varid >>= call . withCsrf . (promptDeleteTemplateVariable (read $ Text.unpack id :: Int64))
     ("POST", ["template", id, _type, varid, "delete"], Just _) -> toTemplateParent _type varid >>= call . verifyCsrf . (promptDeleteTemplateVariable_ (read $ Text.unpack id :: Int64))
 
+
+    ("GET", ["login"], Nothing) -> call $ withCsrf $ showLogin
+    ("POST", ["login"], Nothing) -> call $ verifyCsrf $ showLogin_
+    ("GET", ["logout"], Just _) -> call $ showLogOut
     _ -> throw $ VisibleErrorWithStatus status404 "Could not find this site."
 
 sockServer _ = return ()
 
-showErrors :: Middleware
-showErrors other req f = do
+showErrors :: SessionType -> Middleware
+showErrors context other req f = do
   resp <- try (other req f)
   case resp of
     Right res -> return res
@@ -103,9 +114,9 @@ showErrors other req f = do
                        Just (VisibleError msg) -> (status500, [("exception", toGVal msg), ("status", toGVal (500 :: Int))])
                        Just (VisibleErrorWithStatus status msg) -> (status, [("exception", toGVal msg), ("status", toGVal $ statusCode status)])
                        _ -> throw err
-      result <- try (runTemplate Nothing "exception" $ \k -> return $ fromMaybe def $ lookup k db) :: IO (Either VisibleError Text.Text)
+      result <- try (runTemplate context Nothing "exception" $ \k -> return $ fromMaybe def $ lookup k db) :: IO (Either VisibleError Text.Text)
       case result of
-        Right result' -> f $ responseText status [("Content-Type", "text/html")] result'
+        Right result' -> f $ responseText status [(hContentType, "text/html")] result'
         Left _ -> f $ responseText status500 [] "Something went screwy, and before you knew he was trying to kill everyone."
 
 main = do
@@ -114,11 +125,14 @@ main = do
   hmac <- do key <- flip mapM [1..256] $ (\_ -> randomIO) :: IO [Char]
              return $ initialize $ C8.pack key
   db <- openDatabase
+  addUser db "marcus" "test123"
   port <- lookup "PORT" <$> getEnvironment
   let settings = setServerName C8.empty $ maybe defaultSettings (\p -> setPort (read p) defaultSettings) port
-  runTLS (tlsSettings "new.cert.cert" "new.cert.key") settings $ showErrors
+  let context = Session { sessionDbConn = db
+                        , sessionSession = session
+                        , sessionHasher = hmac
+                        , sessionUser = Nothing }
+  runTLS (tlsSettings "new.cert.cert" "new.cert.key") settings $ showErrors context
                                                                $ withSession store "sess" (def { setCookieHttpOnly = True, setCookieSecure = True, setCookiePath = Just "/" }) session
                                                                $ websocketsOr defaultConnectionOptions sockServer
-                                                               $ app $ Session { sessionDbConn = db
-                                                                               , sessionSession = session
-                                                                               , sessionHasher = hmac}
+                                                               $ app context
