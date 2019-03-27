@@ -29,7 +29,7 @@ loggedInUser context req = do
     Nothing -> return Nothing
     Just t -> case reads $ Text.unpack t of
                 [((uid, passid), "")] -> do
-                  user' <- getLoggedInUser (sessionDbConn context) uid passid
+                  user' <- getUserFromId (sessionDbConn context) uid (Just passid)
                   case user' of
                     Nothing -> doLogOut context req
                     _ -> return ()

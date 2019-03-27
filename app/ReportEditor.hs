@@ -24,11 +24,6 @@ import qualified Data.ByteString.Lazy.Char8 as LC8
 import qualified Data.ByteString.Char8      as C8
 import Safe (headMay)
 
-instance ToGVal m (Map.Map Text.Text (GVal m)) where
-  toGVal xs = def { asLookup = Just $ flip Map.lookup xs
-                  , isNull = Map.null xs
-                  }
-
 instance ToGVal m Report where
   toGVal t = dict $ [("id", toGVal $ reportId t)
                     ,("name", toGVal $ reportName t)
@@ -37,14 +32,26 @@ instance ToGVal m Report where
                     ,("templateLongName", toGVal $ templateLongName $ reportTemplate t)
                     ,("editor", toGVal $ templateEditor $ reportTemplate t)]
 
-listReports context req f = do
+listReports :: CsrfFormApplication
+listReports csrf context req f = do
   reports <- getReports (sessionDbConn context)
+  templates <- getTemplates (sessionDbConn context)
   let lookup :: VarName -> Run p IO Html (GVal (Run p IO Html))
       lookup name = case name of
                       "reports" -> return $ toGVal reports
+                      "templates" -> return $ toGVal templates
+                      "csrf" -> return $ toGVal csrf
                       _ -> return $ def
   result <- runTemplate context Nothing "list_reports" lookup
   f $ responseText status200 [(hContentType, "text/html")] result
+
+listReports_ :: CsrfVerifiedApplication
+listReports_ (params, _) context req f = do
+  case (lookup "name" params, lookup "template" params, sessionUser context, isJust $ lookup "encrypted" params) of
+    (Just name, Just template, Just user, encrypted) -> do
+      reportId <- addReport (sessionDbConn context) (read $ Text.unpack template) name user encrypted
+      redirect (Text.append "/report/" $ Text.pack $ show reportId) req f
+    _ -> redirectSame req f
 
 data TemplateDataFields = DataFieldBuilder { fieldCheckbox :: [Text.Text],
                                              fieldValue :: [Text.Text],
@@ -74,7 +81,7 @@ dataFieldModifier hmac ref func = do
 
 editReport :: Int64 -> Maybe Int64 -> [Text.Text] -> CsrfFormApplication
 editReport id template args csrf context req f = do
-  encryptionKey <- getUserEncryptionKey (sessionDbConn context) id (userId $ fromJust $ sessionUser context)
+  encryptionKey <- getUserEncryptionKey (sessionDbConn context) (fromJust $ sessionUser context) id
   reportAndVars <- getReport (sessionDbConn context) id template encryptionKey
   toSaveMvar <- newIORef $ DataFieldBuilder { fieldCheckbox = [], fieldValue = [], fieldFile = [] }
   let (rpc, args') = case args of
@@ -110,7 +117,7 @@ editReport id template args csrf context req f = do
     
 saveReport :: Int64 -> CsrfVerifiedApplication
 saveReport id (params, files) context req f = do
-  encryptionKey <- getUserEncryptionKey (sessionDbConn context) id (userId $ fromJust $ sessionUser context)
+  encryptionKey <- getUserEncryptionKey (sessionDbConn context) (fromJust $ sessionUser context) id
   variables <- case lookup "fields" params of
                  Just f -> case getSignedData (sessionHasher context) (read $ Text.unpack f) of
                              Just v -> return $ v
@@ -131,7 +138,7 @@ saveReport id (params, files) context req f = do
   redirectSame req f
 
 reportAddList rid (params, _) context req f = do
-  encryptionKey <- getUserEncryptionKey (sessionDbConn context) rid (userId $ fromJust $ sessionUser context)
+  encryptionKey <- getUserEncryptionKey (sessionDbConn context) (fromJust $ sessionUser context) rid
   variables <- case lookup "idx" params of
                  Just a -> return $ read $ Text.unpack a
                  Nothing -> throw $ VisibleError "No list to add"

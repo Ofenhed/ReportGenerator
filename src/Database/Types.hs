@@ -10,6 +10,7 @@ import Data.Default.Class
 import Database.SQLite.Simple
 import Database.SQLite.Simple.FromRow
 import Database.SQLite.Simple.ToRow
+import Crypto.PubKey.RSA (PublicKey)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Encoding
 import Data.Int (Int64)
@@ -17,6 +18,8 @@ import Data.Int (Int64)
 templateParentName (TemplateVarParent i) = ("template", i)
 templateParentName (TemplateVarParentVar i) = ("templateVar", i)
 templateParentName (TemplateVarParentVars i) = ("templateVars", i)
+
+type EncryptedPrivateKey = Text.Text
 
 data Template = Template { templateId :: Int64
                          , templateIncludeName :: Text.Text
@@ -39,7 +42,7 @@ instance FromRow Report where
 data User = User { userId :: Int64
                  , userUsername :: Text.Text
                  , userPassId :: Int64
-                 , userKey :: Maybe (Text.Text, Text.Text) } deriving Show
+                 , userKey :: Maybe (PublicKey, EncryptedPrivateKey) } deriving Show
 
 setupDatabase conn = withTransaction conn $ do
     execute_ conn "CREATE TABLE IF NOT EXISTS Setting (name TEXT PRIMARY KEY, value NOT NULL);"
@@ -55,12 +58,11 @@ setupDatabase conn = withTransaction conn $ do
                              \, CONSTRAINT unique_name_template_vars UNIQUE (templateVars, name)"
     execute_ conn $ Query $ Text.concat ["CREATE TABLE IF NOT EXISTS TemplateVar (id INTEGER PRIMARY KEY ASC, template INTEGER NULL, templateVar INTEGER NULL, templateVars INTEGER NULL, name TEXT NOT NULL, description TEXT, data TEXT NULL, ", templateVarRelation, ");"]
     execute_ conn $ Query $ Text.concat ["CREATE TABLE IF NOT EXISTS TemplateVars (id INTEGER PRIMARY KEY ASC, template INTEGER NULL, templateVar INTEGER NULL, templateVars INTEGER NULL, name TEXT NOT NULL, description TEXT, ", templateVarRelation, ");"]
-    execute_ conn "CREATE TABLE IF NOT EXISTS Report (id INTEGER PRIMARY KEY ASC, template INTEGER NOT NULL, name TEXT NOT NULL, FOREIGN KEY (template) REFERENCES TemplateVar(id));"
+    execute_ conn "CREATE TABLE IF NOT EXISTS Report (id INTEGER PRIMARY KEY ASC, template INTEGER NOT NULL, name TEXT NOT NULL, owner INTEGER NOT NULL, FOREIGN KEY (template) REFERENCES TemplateVar(id), FOREIGN KEY (owner) REFERENCES User(id));"
     execute_ conn "CREATE TABLE IF NOT EXISTS ReportVar (id INTEGER PRIMARY KEY ASC, template INTEGER NOT NULL, parent INTEGER NOT NULL, data TEXT NULL, iv TEXT NULL, FOREIGN KEY (template) REFERENCES TemplateVar(id), CONSTRAINT no_arrays UNIQUE (template, parent));"
     execute_ conn "CREATE TABLE IF NOT EXISTS ReportVars (id INTEGER PRIMARY KEY ASC, template INTEGER NOT NULL, parent INTEGER NOT NULL, data TEXT NULL, iv TEXT NULL, weight INTEGER NOT NULL, FOREIGN KEY (template) REFERENCES TemplateVars(id), FOREIGN KEY (parent) REFERENCES ReportVar(id));"
     execute_ conn "CREATE TABLE IF NOT EXISTS CustVar (id INTEGER PRIMARY KEY ASC, name TEXT NOT NULL, report INTEGER NOT NULL, data TEXT NULL, iv TEXT NULL, FOREIGN KEY (report) REFERENCES Report(id), CONSTRAINT no_arrays UNIQUE (report, name));"
-    -- execute_ conn "CREATE TABLE IF NOT EXISTS ReportKey (id INTEGER PRIMARY KEY ASC, user INTEGER NOT NULL, report INTEGER NOT NULL, key TEXT NOT NULL, FOREIGN KEY (user) REFERENCES User(id), FOREIGN KEY (report) REFERENCES Report(id), CONSTRAINT only_one_key_per_report_and_user UNIQUE (user, report));"
-    execute_ conn "CREATE TABLE IF NOT EXISTS ReportKey (id INTEGER PRIMARY KEY ASC, user INTEGER NOT NULL, report INTEGER NOT NULL, key TEXT NOT NULL, FOREIGN KEY (report) REFERENCES Report(id), CONSTRAINT only_one_key_per_report_and_user UNIQUE (user, report));"
+    execute_ conn "CREATE TABLE IF NOT EXISTS ReportKey (id INTEGER PRIMARY KEY ASC, user INTEGER NOT NULL, report INTEGER NOT NULL, key TEXT NOT NULL, FOREIGN KEY (user) REFERENCES User(id), FOREIGN KEY (report) REFERENCES Report(id), CONSTRAINT only_one_key_per_report_and_user UNIQUE (user, report));"
 
     -- Test data
 
@@ -87,21 +89,22 @@ setupDatabase conn = withTransaction conn $ do
     titleId <- lastInsertRowId conn
     execute conn "INSERT INTO TemplateVar (templateVars, name, description) VALUES (?, 'email', 'Email to person for report');" (Only peopleId)
     emailId <- lastInsertRowId conn
-    execute conn "INSERT INTO Report (template, name) VALUES (?, 'Some secret customer')" (Only tempId)
-    execute conn "INSERT INTO Report (template, name) VALUES (?, 'Some customer')" (Only tempId)
-    reportId <- lastInsertRowId conn
-    execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, '1');" (confidential, reportId)
-    execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, 'Super Important Customer Street');" (cust2Id, reportId)
-    execute conn "INSERT INTO ReportVars (template, parent, data, weight) VALUES (?, ?, 'Marcus Ofenhed', 1);" (peopleId, reportId)
-    marcus <- lastInsertRowId conn
-    execute conn "INSERT INTO ReportVars (template, parent, data, weight) VALUES (?, ?, 'Someone Else', 2);" (peopleId, reportId)
-    other <- lastInsertRowId conn
-    execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, 'Marcus.Ofenhed@hotmail.com');" (emailId, marcus)
-    execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, 'Someone.Else@hotmail.com');" (emailId, other)
-    execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, 'Awesome');" (execVar, reportId)
-    execute conn "INSERT INTO ReportVars (template, parent, data, weight) VALUES (?, ?, 'Super 1337 Haxxor', 1);" (titleId, other)
-    execute conn "INSERT INTO ReportVars (template, parent, data, weight) VALUES (?, ?, 'Has won an Apex Legend match', 2);" (titleId, other)
-    prevRef <- lastInsertRowId conn
-    execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, 'Still awesome');" (recVar, prevRef)
+    return ()
+    -- execute conn "INSERT INTO Report (template, name) VALUES (?, 'Some secret customer')" (Only tempId)
+    -- execute conn "INSERT INTO Report (template, name) VALUES (?, 'Some customer')" (Only tempId)
+    -- reportId <- lastInsertRowId conn
+    -- execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, '1');" (confidential, reportId)
+    -- execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, 'Super Important Customer Street');" (cust2Id, reportId)
+    -- execute conn "INSERT INTO ReportVars (template, parent, data, weight) VALUES (?, ?, 'Marcus Ofenhed', 1);" (peopleId, reportId)
+    -- marcus <- lastInsertRowId conn
+    -- execute conn "INSERT INTO ReportVars (template, parent, data, weight) VALUES (?, ?, 'Someone Else', 2);" (peopleId, reportId)
+    -- other <- lastInsertRowId conn
+    -- execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, 'Marcus.Ofenhed@hotmail.com');" (emailId, marcus)
+    -- execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, 'Someone.Else@hotmail.com');" (emailId, other)
+    -- execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, 'Awesome');" (execVar, reportId)
+    -- execute conn "INSERT INTO ReportVars (template, parent, data, weight) VALUES (?, ?, 'Super 1337 Haxxor', 1);" (titleId, other)
+    -- execute conn "INSERT INTO ReportVars (template, parent, data, weight) VALUES (?, ?, 'Has won an Apex Legend match', 2);" (titleId, other)
+    -- prevRef <- lastInsertRowId conn
+    -- execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, 'Still awesome');" (recVar, prevRef)
 
-    execute conn "INSERT INTO ReportKey (user, report, key) VALUES (1, 1, ?);" (Only "My super secret key for a report" :: Only Text.Text)
+    -- execute conn "INSERT INTO ReportKey (user, report, key) VALUES (1, 1, ?);" (Only "My super secret key for a report" :: Only Text.Text)

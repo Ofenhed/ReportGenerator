@@ -63,13 +63,14 @@ app sess' req f = do
 
     -- Generate report
     ("GET", ["report", "generate", id], Just _) -> do let id' = read $ Text.unpack id
-                                                      key <- getUserEncryptionKey (sessionDbConn sess) id' (userId $ fromJust $ sessionUser sess)
+                                                      key <- getUserEncryptionKey (sessionDbConn sess) (fromJust $ sessionUser sess) id'
                                                       rep <- render (sessionDbConn sess) key id'
                                                       f $ responseText status200 [(hContentType, "text/html")] rep
 
 
     -- List and edit reports
-    ("GET", ["report"], Just _) -> call $ listReports
+    ("GET", ["report"], Just _) -> call $ withCsrf $ listReports
+    ("POST", ["report"], Just _) -> call $ verifyCsrf $ listReports_
     ("GET", "report":"sub":id:tid:args, Just _) -> call $ withCsrf $ editReport (read $ Text.unpack id :: Int64) (Just $ read $ Text.unpack tid :: Maybe Int64) args
     ("GET", "report":id:args, Just _) -> call $ withCsrf $ editReport (read $ Text.unpack id :: Int64) Nothing args
     ("POST", ["report", id], Just _) -> call $ verifyCsrf $ saveReport (read $ Text.unpack id :: Int64)

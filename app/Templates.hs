@@ -18,35 +18,6 @@ import qualified Data.Map as Map
 import qualified Data.Text as Text
 import Data.Maybe (isJust)
 
-instance ToGVal m (Map.Map Text.Text (GVal m)) where
-  toGVal xs = def { asLookup = Just $ flip Map.lookup xs
-                  , isNull = Map.null xs
-                  }
-
-instance ToGVal m Template where
-  toGVal t = dict $ [("id", toGVal $ templateId t)
-                    ,("includeName", toGVal $ templateIncludeName t)
-                    ,("longName", toGVal $ templateLongName t)
-                    ,("description", toGVal $ templateDescription t)
-                    ,("source", toGVal $ templateSource t)
-                    ,("editor", toGVal $ templateEditor t)
-                    ,("includable", toGVal $ templateIncludable t)]
-
-instance ToGVal m TemplateVars where
-  toGVal t = dict $ [("id", toGVal $ templateVarsId t)
-                    ,("type", toGVal $ "arr")
-                    ,("name", toGVal $ templateVarsName t)
-                    ,("description", toGVal $ templateVarsDescription t)
-                    ,("children", toGVal $ templateVarsChildren t)]
-instance ToGVal m TemplateVar where
-  toGVal t = dict $ [("id", toGVal $ templateVarId t)
-                    ,("type", toGVal $ "var")
-                    ,("name", toGVal $ templateVarName t)
-                    ,("description", toGVal $ templateVarDescription t)
-                    ,("default", toGVal $ templateVarDefault t)
-                    ,("children", toGVal $ templateVarChildren t)]
-                                         
-
 listTemplates context req f = do
   templates <- getTemplates (sessionDbConn context)
   let lookup :: VarName -> Run p IO Html (GVal (Run p IO Html))

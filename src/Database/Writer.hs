@@ -161,6 +161,32 @@ updateUserPassword conn username oldpass newpass = withTransaction conn $ do
     Just u -> do
       salt <- flip mapM [1..64] $ (\_ -> randomRIO ('0', 'z'))
       let salt' = Text.pack salt
+      case userKey u of
+        Nothing -> return ()
+        Just (_, privKey) -> let privDecrypted = decryptPrivateKey (userId u) oldpass privKey
+                                 newKey = case privDecrypted of
+                                            Just privDecrypted' -> Just $ encryptPrivateKey (userId u) newpass privDecrypted'
+                                            Nothing -> Nothing
+                               in case newKey of
+                                    Just k -> execute conn "UPDATE User SET privateKey = ? WHERE id = ?" (newKey, userId u)
+                                    Nothing -> throw $ VisibleError "Could not reencrypt the private key"
       execute conn "UPDATE User SET salt = ?, passhash = ? WHERE id = ?" (salt', show $ hashPasswordAndSalt newpass salt', userId u)
       c <- changes conn
       return $ c /= 1
+
+-- Adding reports
+
+addReport :: Connection -> Int64 -> Text.Text -> User -> Bool -> IO Int64
+addReport conn template title owner encrypted = withTransaction conn $ do
+  execute conn "INSERT INTO Report (template, name, owner) VALUES (?, ?, ?)" (template, title, userId owner)
+  reportId <- lastInsertRowId conn
+  case encrypted of
+    False -> return reportId
+    True -> do
+      (pub, _) <- case userKey owner of
+                    Just u -> return u
+                    Nothing -> throw $ VisibleError "You can't create encrypted reports without a public key associated to you."
+      key <- generateSharedKey
+      key <- encryptSharedKey key pub
+      execute conn "INSERT INTO ReportKey (user, report, key) VALUES (?, ?, ?)" (userId owner, reportId, key)
+      return reportId

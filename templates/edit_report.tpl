@@ -31,6 +31,8 @@
   <input type="hidden" name="csrf" value="{{csrf}}">
   <input type="submit" value="Save">
   </form>
+
+  <a href="/report/generate/{{report.id}}">Generate report</a>
   
   Executed: <pre style="border: 1px solid #000">{{ report.editor }}</pre>
 

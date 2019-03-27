@@ -231,19 +231,19 @@ getUserWithPassword conn username password = do
       verifiedUser <- query conn "SELECT id, username, passid, publicKey, privateKey FROM User WHERE id = ? AND passhash = ?" (uid, show hash)
       case verifiedUser of
         [] -> return Nothing
-        [(id, name, pass, Just pub, Just priv)] -> return $ Just $ User { userId = id, userUsername = name, userPassId = pass, userKey = Just (pub, priv) }
+        [(id, name, pass, Just pub, Just priv)] -> return $ Just $ User { userId = id, userUsername = name, userPassId = pass, userKey = Just (read pub, priv) }
         [(id, name, pass, Nothing, Nothing)] -> return $ Just $ User { userId = id, userUsername = name, userPassId = pass, userKey = Nothing }
 
-getLoggedInUser :: Connection -> Int64 -> Int64 -> IO (Maybe User)
-getLoggedInUser conn uid passid = do
-  user <- query conn "SELECT id, username, passid, publicKey, privateKey from User WHERE id = ? AND passid = ?" (uid, passid)
+getUserFromId :: Connection -> Int64 -> Maybe Int64 -> IO (Maybe User)
+getUserFromId conn uid passid = do
+  user <- queryNamed conn "SELECT id, username, passid, publicKey, privateKey from User WHERE id = :id AND (:passid IS NULL OR passid = :passid)" [":id" := uid, ":passid" := passid]
   case user of
     [] -> return Nothing
-    [(id, name, pass, Just pub, Just priv)] -> return $ Just $ User { userId = id, userUsername = name, userPassId = pass, userKey = Just (pub, priv) }
+    [(id, name, pass, Just pub, Just priv)] -> return $ Just $ User { userId = id, userUsername = name, userPassId = pass, userKey = Just (read pub, priv) }
     [(id, name, pass, Nothing, Nothing)] -> return $ Just $ User { userId = id, userUsername = name, userPassId = pass, userKey = Nothing }
 
-getUserEncryptionKey conn uid rid = do
-  res <- query conn "SELECT key FROM ReportKey WHERE user = ? AND report = ?" (uid, rid)
+getUserEncryptionKey conn user rid = do
+  res <- query conn "SELECT key FROM ReportKey WHERE user = ? AND report = ?" (userId user, rid)
   case res of
     [(Only key)] -> return $ Just key
     [] -> return Nothing
