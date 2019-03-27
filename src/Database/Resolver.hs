@@ -2,6 +2,7 @@
 module Database.Resolver where
 
 import Database.Types
+import Database.Encryption
 import Types
 import UserType
 
@@ -10,26 +11,47 @@ import Database.SQLite.Simple.FromRow
 import Database.SQLite.Simple.ToRow
 import Data.IORef (newIORef, readIORef, atomicModifyIORef')
 import Data.Int (Int64)
+import Control.Exception
 
 import qualified Data.Text            as Text
 import qualified Data.Map             as Map
 import qualified Data.Text.Encoding   as Encoding
 
-getVariable :: Connection -> TemplateVarParent -> Int64 -> IO [(Int64, Maybe Int64, Text.Text, Maybe Text.Text)]
-getVariable conn template parent = do
-  let (target, val) = templateParentName template
-  query conn (Query $ Text.concat ["SELECT TemplateVar.id, ReportVar.id, TemplateVar.name, CASE WHEN ReportVar.data IS NOT NULL THEN ReportVar.data ELSE TemplateVar.data END AS data FROM TemplateVar LEFT JOIN ReportVar ON ReportVar.template = TemplateVar.id AND ReportVar.parent = ? WHERE TemplateVar.", target, " = ?"]) (parent, val)
+data EncryptionException = EncryptionMissmatchException
+                         | CouldNotDecryptException deriving Show
+instance Exception EncryptionException
 
-getVariables :: Connection -> TemplateVarParent -> Int64 -> IO [(Int64, Text.Text, [(Int64, Maybe Text.Text)])]
-getVariables conn template parent = do
+getAllChildVariable :: Connection -> TemplateVarParent -> Int64 -> Maybe EncryptionKey -> IO [(Int64, Maybe Int64, Text.Text, Maybe Text.Text)]
+getAllChildVariable conn template parent key = do
+  let (target, val) = templateParentName template
+  variables <- query conn (Query $ Text.concat ["SELECT TemplateVar.id, ReportVar.id, TemplateVar.name, ReportVar.iv, ReportVar.data, TemplateVar.data FROM TemplateVar LEFT JOIN ReportVar ON ReportVar.template = TemplateVar.id AND ReportVar.parent = ? WHERE TemplateVar.", target, " = ?"]) (parent, val)
+  flip mapM variables $ \(tid, rid, name, iv, rd, td) -> case (key, iv, rd) of
+    (Just key, Just iv, Just rd') -> case decryptData key iv rd' of
+                                     Just d' -> return (tid, rid, name, rd)
+                                     Nothing -> throw CouldNotDecryptException
+    (Just key, Just iv, Nothing) -> return (tid, rid, name, Nothing)
+    (Nothing, Nothing, _) -> case rid of
+                              Just _ -> return (tid, rid, name, rd)
+                              Nothing -> return (tid, rid, name, td)
+    _ -> throw EncryptionMissmatchException
+
+getAllChildVariables :: Connection -> TemplateVarParent -> Int64 -> Maybe EncryptionKey -> IO [(Int64, Text.Text, [(Int64, Maybe Text.Text)])]
+getAllChildVariables conn template parent key = do
   let (target, val) = case template of
                         TemplateVarParent i -> ("template", i)
                         TemplateVarParentVar i -> ("templateVar", i)
                         TemplateVarParentVars i -> ("templateVars", i)
   vars <- query conn (Query $ Text.concat ["SELECT TemplateVars.id, TemplateVars.name FROM TemplateVars WHERE ", target, " = ?"]) (Only val)
   flip mapM vars $ \(tId, tName) -> do
-    values <- query conn "SELECT id, data FROM ReportVars WHERE parent = ? AND template = ? ORDER BY weight ASC" (parent, tId)
-    return $ (tId, tName, values)
+    values <- query conn "SELECT id, data, iv FROM ReportVars WHERE parent = ? AND template = ? ORDER BY weight ASC" (parent, tId)
+    values' <- flip mapM values $ \(id, d, iv) -> case (key, iv, d) of
+                 (Just key, Just iv, Just d') -> case decryptData key iv d' of
+                                          Just dec -> return (id, Just dec)
+                                          Nothing -> throw CouldNotDecryptException
+                 (Just key, Just iv, Nothing) -> return (id, d)
+                 (Nothing, Nothing, _) -> return (id, d)
+                 _ -> throw EncryptionMissmatchException
+    return $ (tId, tName, values')
 
 getValue conn report var = do
   result <- query conn "SELECT * FROM ReportVar WHERE report = ? AND parent = ?" (report, var)
@@ -37,11 +59,8 @@ getValue conn report var = do
     [result] -> return $ Just result
     [] -> return $ Nothing
 
-getValues conn report var = do
-  query conn "SELECT * FROM ReportVars WHERE report = ? AND parent = ?" (report, var)
-
-getReport :: Connection -> Int64 -> Maybe Int64 -> IO (Maybe (Report, IOReportContext))
-getReport conn reportId tempId = do
+getReport :: Connection -> Int64 -> Maybe Int64 -> Maybe EncryptionKey -> IO (Maybe (Report, IOReportContext))
+getReport conn reportId tempId encKey = do
   var <- case tempId of
            Nothing -> query conn "SELECT Report.id, Report.name, Template.* FROM Report LEFT JOIN Template ON Report.template = Template.id WHERE Report.id = ?" (Only reportId)
            Just i -> query conn "SELECT Report.id, Report.name, Template.* FROM Report INNER JOIN Template ON Template.id = ? WHERE Report.id = ?" (i, reportId)
@@ -51,20 +70,18 @@ getReport conn reportId tempId = do
     [r] -> do
       var <- query conn "SELECT CustVar.name, CustVar.data FROM CustVar WHERE CustVar.report = ?" (Only reportId)
       atomicModifyIORef' context $ \c -> (c { reportContextCustomVariable = Map.fromList var }, ())
-      includeTemplateVariables conn context (templateIncludeName $ reportTemplate r) $ templateId $ reportTemplate r
+      includeTemplateVariables conn context (templateIncludeName $ reportTemplate r) (templateId $ reportTemplate r) encKey
       return $ Just (r, context)
 
-includeTemplateVariables conn context key template = do
+includeTemplateVariables conn context mapKey template encKey = do
   context' <- readIORef context
   let findVariablesRecursive from parent path = do
-        var <- getVariable conn from parent
+        var <- getAllChildVariable conn from parent encKey
         var' <- flip mapM var $ \(tempId, varId, name, d) -> do
-            -- vars <- getVariables conn from
             let path' = path ++ [case varId of Just varId' -> IndexVal varId' ; Nothing -> IndexTempVar tempId]
             otherVar <- case varId of Nothing -> return $ Map.empty ; Just varId' -> findVariablesRecursive (TemplateVarParentVar tempId) varId' path'
-            -- otherVars <- mapM (findVariablesRecursive . TemplateVarParentVars) vars
             return $ (name, ReportVar { reportVarVariables = otherVar, reportVarValue = Just (path', d), reportVarArray = Nothing })
-        vars <- getVariables conn from parent
+        vars <- getAllChildVariables conn from parent encKey
         vars' <- flip mapM vars $ \(tempId, name, v) -> do
             v' <- flip mapM v $ \(rId, val) -> do
                 let path' = path ++ [IndexArr rId]
@@ -74,7 +91,7 @@ includeTemplateVariables conn context key template = do
         let merged = Map.unionWith (\var vars -> var { reportVarArray = reportVarArray vars }) (Map.fromList var') (Map.fromList vars')
         return merged
   vars <- findVariablesRecursive (TemplateVarParent template) (reportContextId context') []
-  atomicModifyIORef' context $ \c -> (c { reportContextVariable = Map.insert key (ReportVar { reportVarVariables = vars, reportVarValue = Nothing, reportVarArray = Nothing}) (reportContextVariable c) }, ())
+  atomicModifyIORef' context $ \c -> (c { reportContextVariable = Map.insert mapKey (ReportVar { reportVarVariables = vars, reportVarValue = Nothing, reportVarArray = Nothing}) (reportContextVariable c) }, ())
 
 getTemplate :: Connection -> IOReportContext -> Text.Text -> Bool -> IO (Maybe Text.Text)
 getTemplate conn context template included = do
@@ -83,7 +100,7 @@ getTemplate conn context template included = do
   case var of
     [] -> return $ Nothing
     [(tId, name, v)] -> do
-      includeTemplateVariables conn context name tId
+      includeTemplateVariables conn context name tId Nothing
       c <- readIORef context
       return $ Just v
 
@@ -96,7 +113,7 @@ getTemplateEditor conn context template included = do
   case var of
     [] -> return $ Nothing
     [(tId, name, v)] -> do
-      includeTemplateVariables conn context name tId
+      includeTemplateVariables conn context name tId Nothing
       c <- readIORef context
       return $ Just v
 

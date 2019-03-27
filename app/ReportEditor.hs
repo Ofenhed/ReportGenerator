@@ -73,7 +73,7 @@ dataFieldModifier hmac ref func = do
 
 editReport :: Int64 -> Maybe Int64 -> [Text.Text] -> CsrfFormApplication
 editReport id template args csrf context req f = do
-  reportAndVars <- getReport (sessionDbConn context) id template
+  reportAndVars <- getReport (sessionDbConn context) id template Nothing
   toSaveMvar <- newIORef $ DataFieldBuilder { fieldCheckbox = [], fieldValue = [], fieldFile = [] }
   let (rpc, args') = case args of
                        "rpc":a -> (True, a)
@@ -114,16 +114,16 @@ saveReport id (params, files) context req f = do
                              Nothing -> throw $ VisibleError "I don't think that's something I signed..."
                  Nothing -> throw $ VisibleError "No fields received"
   flip mapM (fieldValue variables) $ \variable -> do
-    setVariable (sessionDbConn context) id (read $ Text.unpack variable) $ lookup variable params
+    setVariable (sessionDbConn context) Nothing id (read $ Text.unpack variable) $ lookup variable params
   flip mapM (fieldCheckbox variables) $ \variable -> do
-    setVariable (sessionDbConn context) id (read $ Text.unpack variable) $ if isJust $ lookup variable params
+    setVariable (sessionDbConn context) Nothing id (read $ Text.unpack variable) $ if isJust $ lookup variable params
                                                                              then (1 :: Int)
                                                                              else 0
   flip mapM (fieldFile variables) $ \file -> do
     case lookup (Encoding.encodeUtf8 file) files of
       Just f -> if (fileName f == C8.empty || fileName f == C8.pack "\"\"") && fileContent f == LC8.empty -- Bug in Wai/Warp makes filenames contain "" when really empty
                   then return True
-                  else setVariable (sessionDbConn context) id (read $ Text.unpack file) $ Encoding.decodeUtf8 $ LC8.toStrict $ fileContent f
+                  else setVariable (sessionDbConn context) Nothing id (read $ Text.unpack file) $ Encoding.decodeUtf8 $ LC8.toStrict $ fileContent f
       Nothing -> return True
   redirectSame req f
 

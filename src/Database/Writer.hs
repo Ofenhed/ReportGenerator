@@ -3,6 +3,7 @@ module Database.Writer where
 
 import Database.Types
 import Database.Resolver
+import Database.Encryption
 import Types
 import UserType
 
@@ -76,8 +77,8 @@ addTemplateVariable conn parent name value = let (parentType, idx) = templatePar
 addTemplateArray conn parent name = let (parentType, idx) = templateParentName parent
                                       in execute conn (Query $ Text.concat ["INSERT INTO TemplateVars (", parentType, ", name) VALUES (?, ?)"]) (idx, name)
 
-setVariable :: (FromField a, ToField a, Show a) => Connection -> Int64 -> IndexPathType -> a -> IO Bool
-setVariable conn report path value = withTransaction conn $ do
+setVariable :: (FromField a, ToField a, Show a) => Connection -> Maybe EncryptionKey -> Int64 -> IndexPathType -> a -> IO Bool
+setVariable conn encKey report path value = withTransaction conn $ do
   let endOfPath = take 2 $ reverse path
   report' <- case endOfPath of
     i@(IndexArr _):_ -> getParentReport conn i
@@ -89,25 +90,28 @@ setVariable conn report path value = withTransaction conn $ do
   if Just report /= report'
     then throw $ VisibleError "The changed variable does not belong to the current report"
     else return ()
+  (iv, value, plain) <- case encKey of
+                          Just k -> generateIv >>= \iv -> return (Just iv, encryptData k iv $ Text.pack $ show value, value)
+                          Nothing -> return (Nothing, Text.pack $ show value, value)
   case endOfPath of
     IndexTempVar i:p -> do let parent = case p of
                                           [IndexArr p] -> p
                                           [IndexVal p] -> p
                                           [] -> report
-                           executeNamed conn "INSERT INTO ReportVar (template, parent, data) \
-                                               \SELECT :template, :parent, :value \
+                           executeNamed conn "INSERT INTO ReportVar (template, parent, data, iv) \
+                                               \SELECT :template, :parent, :value, :iv \
                                                  \FROM TemplateVar \
-                                                   \WHERE (TemplateVar.data IS NULL OR TemplateVar.data != :value) AND TemplateVar.id = :template \
+                                                   \WHERE (TemplateVar.data IS NULL OR TemplateVar.data != :plain) AND TemplateVar.id = :template \
                                              \ON CONFLICT(template, parent) DO UPDATE SET data = :value"
-                                                      [":template" := i, ":parent" := parent, ":value" := value]
+                                                      [":template" := i, ":parent" := parent, ":value" := value, ":iv" := iv, ":plain" := plain]
                            return True
-    [IndexVal i] -> execute conn "UPDATE ReportVar SET data = ? WHERE id = ? AND parent = ?" (value, i, report) >> return True
-    [IndexArr i] -> execute conn "UPDATE ReportVars SET data = ? WHERE id = ? AND parent = ?" (value, i, report) >> return True
+    [IndexVal i] -> execute conn "UPDATE ReportVar SET data = ?, iv = ? WHERE id = ? AND parent = ?" (value, iv, i, report) >> return True
+    [IndexArr i] -> execute conn "UPDATE ReportVars SET data = ?, iv = ? WHERE id = ? AND parent = ?" (value, iv, i, report) >> return True
                        
-    [IndexVal i, IndexVal parent] -> execute conn "UPDATE ReportVar SET data = ? WHERE id = ? AND parent = ?" (value, i, parent) >> return True
-    [IndexVal i, IndexArr parent] -> execute conn "UPDATE ReportVar SET data = ? WHERE id = ? AND parent = ?" (value, i, parent) >> return True
-    [IndexArr i, IndexArr parent] -> execute conn "UPDATE ReportVars SET data = ? WHERE id = ? AND parent = ?" (value, i, parent) >> return True
-    [IndexArr i, IndexVal parent] -> execute conn "UPDATE ReportVars SET data = ? WHERE id = ? AND parent = ?" (value, i, parent) >> return True
+    [IndexVal i, IndexVal parent] -> execute conn "UPDATE ReportVar SET data = ?, iv = ? WHERE id = ? AND parent = ?" (value, iv, i, parent) >> return True
+    [IndexVal i, IndexArr parent] -> execute conn "UPDATE ReportVar SET data = ?, iv = ? WHERE id = ? AND parent = ?" (value, iv, i, parent) >> return True
+    [IndexArr i, IndexArr parent] -> execute conn "UPDATE ReportVars SET data = ?, iv = ? WHERE id = ? AND parent = ?" (value, iv, i, parent) >> return True
+    [IndexArr i, IndexVal parent] -> execute conn "UPDATE ReportVars SET data = ?, iv = ? WHERE id = ? AND parent = ?" (value, iv, i, parent) >> return True
     _ -> return False
 
 addArray :: Connection -> Int64 -> IndexPathType -> IO IndexPathType

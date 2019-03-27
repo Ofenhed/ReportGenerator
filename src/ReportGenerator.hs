@@ -57,7 +57,7 @@ contextLookup reportState context var = do
 
 render conn report = do
   headerState <- createHeaderState
-  template' <- getReport conn report Nothing
+  template' <- getReport conn report Nothing Nothing
   case template' of
     Nothing -> return "Error: Could not find template for report"
     Just (t, context) -> do
