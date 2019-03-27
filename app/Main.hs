@@ -4,6 +4,8 @@
 
 import Database.Database
 import Database.Writer
+import Database.Types (User(userId))
+import Database.Encryption
 import ReportGenerator
 import ReportEditor
 import Types
@@ -60,7 +62,10 @@ app sess' req f = do
                          f $ responseText status200 [(hContentType, "text/html")] t
 
     -- Generate report
-    ("GET", ["report", "generate", id], Just _) -> render (sessionDbConn sess) 1 >>= \rep -> f $ responseText status200 [(hContentType, "text/html")] rep
+    ("GET", ["report", "generate", id], Just _) -> do let id' = read $ Text.unpack id
+                                                      key <- getUserEncryptionKey (sessionDbConn sess) id' (userId $ fromJust $ sessionUser sess)
+                                                      rep <- render (sessionDbConn sess) key id'
+                                                      f $ responseText status200 [(hContentType, "text/html")] rep
 
 
     -- List and edit reports

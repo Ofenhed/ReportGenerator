@@ -29,9 +29,9 @@ import Control.DeepSeq (deepseq)
 import qualified Data.Map                       as Map
 import Data.Int (Int64)
 
-includeResolver conn context file = do
+includeResolver conn context encKey file = do
   case Text.splitOn "/" $ Text.pack file of
-    [".", "template", t] -> getTemplate conn context t True >>= return . (maybe Nothing (Just . Text.unpack))
+    [".", "template", t] -> getTemplate conn context encKey t True >>= return . (maybe Nothing (Just . Text.unpack))
     _ -> return $ Nothing
 
 data ReportState = ReportState { stateReportId :: Int64,
@@ -49,19 +49,20 @@ contextLookup reportState context var = do
              "ref" -> return $ fromFunction $ createRef headerState
              "table_of_contents" -> return $ toGVal $ tableOfContentPlaceholder
              "template" -> liftRun $ readIORef context >>= return . toGVal . reportContextVariable
+             "set_content_type" -> return $ toGVal () -- TODO: Implement a way to change generated report type. Useful for reports that consist of a single file.
              -- "extra_builtins" -> return $ toGVal $ Map.map fromFunction $ Map.fromList gingerFunctions
              "report" -> liftRun $ readIORef context >>= return . toGVal . reportContextCustomVariable
              _ -> case lookup var gingerFunctions of
                     Just v -> return $ fromFunction v
                     Nothing -> throw $ VisibleError $ Text.concat ["Variable '", var, "' cannot be found"]
 
-render conn report = do
+render conn encKey report = do
   headerState <- createHeaderState
-  template' <- getReport conn report Nothing Nothing
+  template' <- getReport conn report Nothing encKey
   case template' of
     Nothing -> return "Error: Could not find template for report"
     Just (t, context) -> do
-      parsed' <- parseGinger (includeResolver conn context) Nothing $ Text.unpack $ templateSource $ reportTemplate t
+      parsed' <- parseGinger (includeResolver conn context encKey) Nothing $ Text.unpack $ templateSource $ reportTemplate t
       parsed <- case parsed' of
                   Right p -> return p
                   Left msg -> throw $ VisibleError $ Text.pack $ peErrorMessage msg

@@ -90,27 +90,27 @@ includeTemplateVariables conn context mapKey template encKey = do
   vars <- findVariablesRecursive (TemplateVarParent template) (reportContextId context') []
   atomicModifyIORef' context $ \c -> (c { reportContextVariable = Map.insert mapKey (ReportVar { reportVarVariables = vars, reportVarValue = Nothing, reportVarArray = Nothing}) (reportContextVariable c) }, ())
 
-getTemplate :: Connection -> IOReportContext -> Text.Text -> Bool -> IO (Maybe Text.Text)
-getTemplate conn context template included = do
+getTemplate :: Connection -> IOReportContext -> Maybe EncryptionKey -> Text.Text -> Bool -> IO (Maybe Text.Text)
+getTemplate conn context encKey template included = do
   var <- query conn "SELECT id, includeName, source FROM Template WHERE includeName = ? AND (? = 0 OR includable = 1)" (template, included)
   context' <- readIORef context
   case var of
     [] -> return $ Nothing
     [(tId, name, v)] -> do
-      includeTemplateVariables conn context name tId Nothing
+      includeTemplateVariables conn context name tId encKey
       c <- readIORef context
       return $ Just v
 
 -- Editor
 
-getTemplateEditor :: Connection -> IOReportContext -> Text.Text -> Bool -> IO (Maybe Text.Text)
-getTemplateEditor conn context template included = do
+getTemplateEditor :: Connection -> IOReportContext -> Maybe EncryptionKey -> Text.Text -> Bool -> IO (Maybe Text.Text)
+getTemplateEditor conn context encKey template included = do
   var <- query conn "SELECT id, includeName, editor FROM Template WHERE includeName = ? AND (? = 0 OR includable = 1)" (template, included)
   context' <- readIORef context
   case var of
     [] -> return $ Nothing
     [(tId, name, v)] -> do
-      includeTemplateVariables conn context name tId Nothing
+      includeTemplateVariables conn context name tId encKey
       c <- readIORef context
       return $ Just v
 

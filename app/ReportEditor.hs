@@ -103,7 +103,7 @@ editReport id template args csrf context req f = do
           includer parent name = case Text.splitOn "/" $ Text.pack name of
                                    [".", "default"] -> parent name
                                    [".", "template_curr"] -> return $ Just $ Text.unpack $ templateEditor $ reportTemplate report
-                                   [".", "template", sub] -> getTemplateEditor (sessionDbConn context) context' sub True >>= return . (maybe Nothing $ Just . Text.unpack)
+                                   [".", "template", sub] -> getTemplateEditor (sessionDbConn context) context' encryptionKey sub True >>= return . (maybe Nothing $ Just . Text.unpack)
                                    _ -> return Nothing
       result <- runTemplate context (Just includer) "edit_report" lookup
       f $ responseText status200 [(hContentType, "text/html")] result
