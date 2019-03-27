@@ -23,6 +23,7 @@ dependencies:
 - alfred-margaret
 - base >= 4.7 && < 5
 - base16-bytestring
+- base64-bytestring
 - bytestring
 - containers
 - cookie

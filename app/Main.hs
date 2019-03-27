@@ -5,7 +5,7 @@
 import Database.Database
 import Database.Writer
 import Database.Types (User(userId))
-import Database.Encryption
+import Database.Resolver
 import ReportGenerator
 import ReportEditor
 import Types

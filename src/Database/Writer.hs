@@ -19,6 +19,8 @@ import System.Random (randomRIO)
 import qualified Data.Text as Text
 import qualified Data.Map as Map
 
+import Debug.Trace
+
 changeTemplate :: Connection -> (Maybe Template -> (Maybe Template, a)) -> Int64 -> IO a
 changeTemplate conn f id = do
   template <- query conn "SELECT * FROM Template WHERE id == ?" (Only id)
@@ -141,10 +143,15 @@ addArray conn encKey report path val = withTransaction conn $ do
 -- Users
 
 addUser :: Connection -> Text.Text -> Text.Text -> IO ()
-addUser conn username password = do
+addUser conn username password = withTransaction conn $ do
   salt <- flip mapM [1..64] $ (\_ -> randomRIO ('0', 'z'))
   let salt' = Text.pack salt
   execute conn "INSERT INTO User (username, salt, passhash) VALUES (?, ?, ?)" (username, salt', show $ hashPasswordAndSalt password salt')
+  id <- lastInsertRowId conn
+  (pub, priv) <- generateKeyPair id password
+  execute conn "UPDATE User SET publicKey = ?, privateKey = ? WHERE id = ?" (show pub, priv, id)
+  [(Only d)] <- query conn "SELECT privateKey FROM User WHERE id = ?" (Only id)
+  traceShowM $ decryptPrivateKey id password d
 
 updateUserPassword :: Connection -> Text.Text -> Text.Text -> Text.Text -> IO Bool
 updateUserPassword conn username oldpass newpass = withTransaction conn $ do

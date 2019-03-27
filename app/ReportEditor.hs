@@ -126,7 +126,7 @@ saveReport id (params, files) context req f = do
     case lookup (Encoding.encodeUtf8 file) files of
       Just f -> if (fileName f == C8.empty || fileName f == C8.pack "\"\"") && fileContent f == LC8.empty -- Bug in Wai/Warp makes filenames contain "" when really empty
                   then return True
-                  else setVariable (sessionDbConn context) encryptionKey id (read $ Text.unpack file) $ Just $ Encoding.decodeUtf8 $ LC8.toStrict $ fileContent f
+                  else setVariable (sessionDbConn context) encryptionKey id (read $ Text.unpack file) $ Just $ Encoding.decodeLatin1 $ LC8.toStrict $ fileContent f
       Nothing -> return True
   redirectSame req f
 

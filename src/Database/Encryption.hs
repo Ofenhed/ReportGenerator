@@ -1,14 +1,30 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Database.Encryption where
 
-import Database.SQLite.Simple
-import System.Random (randomRIO)
+import ServerSecret
 
-import qualified Data.Text as Text
+import Crypto.MAC.HMAC (hmac, HMAC(hmacGetDigest))
+import Crypto.Hash (Digest)
+import Crypto.Hash.Algorithms (SHA512)
+import Crypto.Cipher.Types (nullIV, cbcEncrypt, cbcDecrypt, Cipher(cipherInit, cipherKeySize), KeySizeSpecifier(KeySizeFixed), BlockCipher (cbcEncrypt, cbcDecrypt, blockSize))
+import Crypto.PubKey.RSA (PrivateKey, PublicKey, generate)
+import Crypto.Cipher.AES (AES192)
+import Crypto.Data.Padding (pad, unpad, Format(PKCS7))
+import Crypto.Error (CryptoFailable(CryptoPassed))
+import System.Random (randomIO)
+import Data.Int (Int64)
+
+import qualified Data.ByteString.Base64   as B64
+import qualified Data.Text                as Text
+import qualified Data.Text.Encoding       as Encoding
+import qualified Data.ByteArray           as BA
+import qualified Data.ByteString.Char8    as C8
 
 type EncryptionKey = Text.Text
+type EncryptionIv = Text.Text
+type EncryptedPrivateKey = Text.Text
 
-decryptData :: Read a => EncryptionKey -> Text.Text -> Text.Text -> Maybe a
+decryptData :: Read a => EncryptionKey -> EncryptionIv -> Text.Text -> Maybe a
 decryptData key iv d = let (key', d') = Text.splitAt (Text.length key + Text.length iv) d
                       in if (Text.append key iv) == key'
                            then case reads $ Text.unpack d' of
@@ -16,14 +32,35 @@ decryptData key iv d = let (key', d') = Text.splitAt (Text.length key + Text.len
                                   _ -> Nothing
                            else Nothing
 
-encryptData :: Show a => EncryptionKey -> Text.Text -> a -> Text.Text
+encryptData :: Show a => EncryptionKey -> EncryptionIv -> a -> Text.Text
 encryptData key iv d = Text.concat [key, iv, Text.pack $ show d]
 
-generateIv :: IO Text.Text
-generateIv = (flip mapM [1..64] $ (\_ -> randomRIO ('0', 'z'))) >>= return . Text.pack
+generateIv :: IO EncryptionIv
+generateIv = (flip mapM [1..64] $ (\_ -> randomIO)) >>= return . Text.pack
 
-getUserEncryptionKey conn uid rid = do
-  res <- query conn "SELECT key FROM ReportKey WHERE user = ? AND report = ?" (uid, rid)
-  case res of
-    [(Only key)] -> return $ Just key
-    [] -> return Nothing
+decryptionKey :: Int64 -> Text.Text -> Digest SHA512
+decryptionKey id password = hmacGetDigest $ hmac (Encoding.encodeUtf8 $ Text.concat ["pubKeyEncryptionKey", serverSecret]) $ Encoding.encodeUtf8 $ Text.concat [Text.pack $ show id, ":", password]
+
+generateKeyPair :: Int64 -> Text.Text -> IO (PublicKey, EncryptedPrivateKey)
+generateKeyPair id password = do
+  (pub, priv) <- generate 512 0x10001
+  return (pub, encryptPrivateKey id password priv)
+
+encryptPrivateKey :: Int64 -> Text.Text -> PrivateKey -> EncryptedPrivateKey
+encryptPrivateKey id password key = let KeySizeFixed aesSize = cipherKeySize (undefined :: AES192)
+                                        (aesKey, rest) = BA.splitAt aesSize $ BA.convert $ decryptionKey id password :: (BA.Bytes, BA.Bytes)
+                                        CryptoPassed aesCiph = cipherInit aesKey :: CryptoFailable AES192
+                                      in Encoding.decodeLatin1 $ B64.encode $ cbcEncrypt aesCiph nullIV $ pad (PKCS7 $ blockSize aesCiph) $ Encoding.encodeUtf8 $ Text.pack $ show key
+
+decryptPrivateKey :: Int64 -> Text.Text -> EncryptedPrivateKey -> Maybe PrivateKey
+decryptPrivateKey id password key = let KeySizeFixed aesSize = cipherKeySize (undefined :: AES192)
+                                        (aesKey, rest) = BA.splitAt aesSize $ BA.convert $ decryptionKey id password :: (BA.Bytes, BA.Bytes)
+                                        CryptoPassed aesCiph = cipherInit aesKey :: CryptoFailable AES192
+                                        decodedKey = B64.decode $ Encoding.encodeUtf8 key
+                                      in case decodedKey of
+                                           Left _ -> Nothing
+                                           Right decodedKey' -> case unpad (PKCS7 $ blockSize aesCiph) $ cbcDecrypt aesCiph nullIV decodedKey' of
+                                                                  Nothing -> Nothing
+                                                                  Just k -> case reads $ C8.unpack k of
+                                                                              [(k, [])] -> Just k
+                                                                              _ -> Nothing

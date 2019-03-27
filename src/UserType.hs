@@ -1,7 +1,9 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE OverloadedStrings #-}
 module UserType where
 
 import Types
+import ServerSecret
 
 import Crypto.MAC.HMAC (hmac, HMAC(hmacGetDigest))
 import Crypto.Hash (Digest)
@@ -11,7 +13,5 @@ import Data.FileEmbed (embedFile)
 import qualified Data.Text.Encoding   as Encoding
 import qualified Data.Text            as Text
 
-serverSalt = Encoding.decodeUtf8 $(embedFile "server_secret.txt")
-
 hashPasswordAndSalt :: Text.Text -> Text.Text -> Digest SHA512
-hashPasswordAndSalt pass salt = hmacGetDigest $ hmac (Encoding.encodeUtf8 $ Text.append serverSalt salt) $ Encoding.encodeUtf8 pass
+hashPasswordAndSalt pass salt = hmacGetDigest $ hmac (Encoding.encodeUtf8 $ Text.concat ["password", serverSecret, salt]) $ Encoding.encodeUtf8 pass
