@@ -17,6 +17,8 @@ import qualified Data.Text            as Text
 import qualified Data.Map             as Map
 import qualified Data.Text.Encoding   as Encoding
 
+import Debug.Trace
+
 data EncryptionException = EncryptionMissmatchException
                          | CouldNotDecryptException deriving Show
 instance Exception EncryptionException
@@ -25,14 +27,15 @@ getAllChildVariable :: Connection -> TemplateVarParent -> Int64 -> Maybe Encrypt
 getAllChildVariable conn template parent key = do
   let (target, val) = templateParentName template
   variables <- query conn (Query $ Text.concat ["SELECT TemplateVar.id, ReportVar.id, TemplateVar.name, ReportVar.iv, ReportVar.data, TemplateVar.data FROM TemplateVar LEFT JOIN ReportVar ON ReportVar.template = TemplateVar.id AND ReportVar.parent = ? WHERE TemplateVar.", target, " = ?"]) (parent, val)
-  flip mapM variables $ \(tid, rid, name, iv, rd, td) -> case (key, iv, rd) of
+  flip mapM variables $ \(tid, rid, name, iv, rd, td) -> case traceShowId (key, iv, rd) of
     (Just key, Just iv, Just rd') -> case decryptData key iv rd' of
-                                     Just d' -> return (tid, rid, name, rd)
-                                     Nothing -> throw CouldNotDecryptException
+                                       Just dec -> return (tid, rid, name, dec)
+                                       Nothing -> throw CouldNotDecryptException
     (Just key, Just iv, Nothing) -> return (tid, rid, name, Nothing)
     (Nothing, Nothing, _) -> case rid of
                               Just _ -> return (tid, rid, name, rd)
                               Nothing -> return (tid, rid, name, td)
+    (Just _, Nothing, Nothing) -> return (tid, rid, name, td)
     _ -> throw EncryptionMissmatchException
 
 getAllChildVariables :: Connection -> TemplateVarParent -> Int64 -> Maybe EncryptionKey -> IO [(Int64, Text.Text, [(Int64, Maybe Text.Text)])]
@@ -44,20 +47,14 @@ getAllChildVariables conn template parent key = do
   vars <- query conn (Query $ Text.concat ["SELECT TemplateVars.id, TemplateVars.name FROM TemplateVars WHERE ", target, " = ?"]) (Only val)
   flip mapM vars $ \(tId, tName) -> do
     values <- query conn "SELECT id, data, iv FROM ReportVars WHERE parent = ? AND template = ? ORDER BY weight ASC" (parent, tId)
-    values' <- flip mapM values $ \(id, d, iv) -> case (key, iv, d) of
+    values' <- flip mapM values $ \(id, d, iv) -> case traceShowId (key, iv, d) of
                  (Just key, Just iv, Just d') -> case decryptData key iv d' of
-                                          Just dec -> return (id, Just dec)
+                                          Just dec -> return (id, dec)
                                           Nothing -> throw CouldNotDecryptException
                  (Just key, Just iv, Nothing) -> return (id, d)
                  (Nothing, Nothing, _) -> return (id, d)
                  _ -> throw EncryptionMissmatchException
     return $ (tId, tName, values')
-
-getValue conn report var = do
-  result <- query conn "SELECT * FROM ReportVar WHERE report = ? AND parent = ?" (report, var)
-  case result of
-    [result] -> return $ Just result
-    [] -> return $ Nothing
 
 getReport :: Connection -> Int64 -> Maybe Int64 -> Maybe EncryptionKey -> IO (Maybe (Report, IOReportContext))
 getReport conn reportId tempId encKey = do

@@ -7,6 +7,7 @@ import Common
 import Database.Resolver
 import Database.Writer
 import Database.Types
+import Database.Encryption
 import Csrf
 import Redirect
 import SignedData
@@ -18,7 +19,7 @@ import Data.IORef (newIORef, readIORef, atomicModifyIORef')
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Encoding
-import Data.Maybe (isJust, maybe)
+import Data.Maybe (isJust, maybe, fromJust)
 import qualified Data.ByteString.Lazy.Char8 as LC8
 import qualified Data.ByteString.Char8      as C8
 import Safe (headMay)
@@ -73,7 +74,8 @@ dataFieldModifier hmac ref func = do
 
 editReport :: Int64 -> Maybe Int64 -> [Text.Text] -> CsrfFormApplication
 editReport id template args csrf context req f = do
-  reportAndVars <- getReport (sessionDbConn context) id template Nothing
+  encryptionKey <- getUserEncryptionKey (sessionDbConn context) id (userId $ fromJust $ sessionUser context)
+  reportAndVars <- getReport (sessionDbConn context) id template encryptionKey
   toSaveMvar <- newIORef $ DataFieldBuilder { fieldCheckbox = [], fieldValue = [], fieldFile = [] }
   let (rpc, args') = case args of
                        "rpc":a -> (True, a)
@@ -108,28 +110,30 @@ editReport id template args csrf context req f = do
     
 saveReport :: Int64 -> CsrfVerifiedApplication
 saveReport id (params, files) context req f = do
+  encryptionKey <- getUserEncryptionKey (sessionDbConn context) id (userId $ fromJust $ sessionUser context)
   variables <- case lookup "fields" params of
                  Just f -> case getSignedData (sessionHasher context) (read $ Text.unpack f) of
                              Just v -> return $ v
                              Nothing -> throw $ VisibleError "I don't think that's something I signed..."
                  Nothing -> throw $ VisibleError "No fields received"
   flip mapM (fieldValue variables) $ \variable -> do
-    setVariable (sessionDbConn context) Nothing id (read $ Text.unpack variable) $ lookup variable params
+    setVariable (sessionDbConn context) encryptionKey id (read $ Text.unpack variable) $ lookup variable params
   flip mapM (fieldCheckbox variables) $ \variable -> do
-    setVariable (sessionDbConn context) Nothing id (read $ Text.unpack variable) $ if isJust $ lookup variable params
-                                                                             then (1 :: Int)
-                                                                             else 0
+    setVariable (sessionDbConn context) encryptionKey id (read $ Text.unpack variable) $ if isJust $ lookup variable params
+                                                                             then Just ("1" :: Text.Text)
+                                                                             else Just "0"
   flip mapM (fieldFile variables) $ \file -> do
     case lookup (Encoding.encodeUtf8 file) files of
       Just f -> if (fileName f == C8.empty || fileName f == C8.pack "\"\"") && fileContent f == LC8.empty -- Bug in Wai/Warp makes filenames contain "" when really empty
                   then return True
-                  else setVariable (sessionDbConn context) Nothing id (read $ Text.unpack file) $ Encoding.decodeUtf8 $ LC8.toStrict $ fileContent f
+                  else setVariable (sessionDbConn context) encryptionKey id (read $ Text.unpack file) $ Just $ Encoding.decodeUtf8 $ LC8.toStrict $ fileContent f
       Nothing -> return True
   redirectSame req f
 
 reportAddList rid (params, _) context req f = do
+  encryptionKey <- getUserEncryptionKey (sessionDbConn context) rid (userId $ fromJust $ sessionUser context)
   variables <- case lookup "idx" params of
                  Just a -> return $ read $ Text.unpack a
                  Nothing -> throw $ VisibleError "No list to add"
-  _ <- addArray (sessionDbConn context) rid variables
+  _ <- addArray (sessionDbConn context) encryptionKey rid variables Nothing
   redirectBack req f

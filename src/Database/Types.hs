@@ -58,6 +58,8 @@ setupDatabase conn = withTransaction conn $ do
     execute_ conn "CREATE TABLE IF NOT EXISTS CustVar (id INTEGER PRIMARY KEY ASC, name TEXT NOT NULL, report INTEGER NOT NULL, data TEXT NULL, iv TEXT NULL, FOREIGN KEY (report) REFERENCES Report(id), CONSTRAINT no_arrays UNIQUE (report, name));"
     execute_ conn "CREATE TABLE IF NOT EXISTS User (id INTEGER PRIMARY KEY ASC, username TEXT NOT NULL, passhash TEXT NOT NULL, salt TEXT NOT NULL, passid INTEGER NOT NULL DEFAULT 0, publicKey TEXT, privateKey TEXT, CONSTRAINT full_set_of_keys CHECK ((publicKey IS NULL AND privateKey IS NULL) OR (publicKey IS NOT NULL AND privateKey IS NOT NULL)), CONSTRAINT unique_username UNIQUE (username));"
     execute_ conn "CREATE TRIGGER IF NOT EXISTS user_pass_counter AFTER UPDATE ON User WHEN OLD.passhash != NEW.passhash BEGIN UPDATE User SET passid = OLD.passid + 1 WHERE id = NEW.id; END;"
+    -- execute_ conn "CREATE TABLE IF NOT EXISTS ReportKey (id INTEGER PRIMARY KEY ASC, user INTEGER NOT NULL, report INTEGER NOT NULL, key TEXT NOT NULL, FOREIGN KEY (user) REFERENCES User(id), FOREIGN KEY (report) REFERENCES Report(id), CONSTRAINT only_one_key_per_report_and_user UNIQUE (user, report));"
+    execute_ conn "CREATE TABLE IF NOT EXISTS ReportKey (id INTEGER PRIMARY KEY ASC, user INTEGER NOT NULL, report INTEGER NOT NULL, key TEXT NOT NULL, FOREIGN KEY (report) REFERENCES Report(id), CONSTRAINT only_one_key_per_report_and_user UNIQUE (user, report));"
 
     -- Test data
 
@@ -84,6 +86,7 @@ setupDatabase conn = withTransaction conn $ do
     titleId <- lastInsertRowId conn
     execute conn "INSERT INTO TemplateVar (templateVars, name, description) VALUES (?, 'email', 'Email to person for report');" (Only peopleId)
     emailId <- lastInsertRowId conn
+    execute conn "INSERT INTO Report (template, name) VALUES (?, 'Some secret customer')" (Only tempId)
     execute conn "INSERT INTO Report (template, name) VALUES (?, 'Some customer')" (Only tempId)
     reportId <- lastInsertRowId conn
     execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, '1');" (confidential, reportId)
@@ -99,3 +102,5 @@ setupDatabase conn = withTransaction conn $ do
     execute conn "INSERT INTO ReportVars (template, parent, data, weight) VALUES (?, ?, 'Has won an Apex Legend match', 2);" (titleId, other)
     prevRef <- lastInsertRowId conn
     execute conn "INSERT INTO ReportVar (template, parent, data) VALUES (?, ?, 'Still awesome');" (recVar, prevRef)
+
+    execute conn "INSERT INTO ReportKey (user, report, key) VALUES (1, 1, ?);" (Only "My super secret key for a report" :: Only Text.Text)
