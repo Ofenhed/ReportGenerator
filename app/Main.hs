@@ -63,7 +63,7 @@ app sess' req f = do
 
     -- Generate report
     ("GET", ["report", "generate", id], Just _) -> do let id' = read $ Text.unpack id
-                                                      key <- getUserEncryptionKey (sessionDbConn sess) (fromJust $ sessionUser sess) id'
+                                                      key <- getUserEncryptionKeyFor (sessionDbConn sess) (fromJust $ sessionUser sess) id'
                                                       rep <- render (sessionDbConn sess) key id'
                                                       f $ responseText status200 [(hContentType, "text/html")] rep
 

@@ -27,6 +27,8 @@ import Debug.Trace
 type EncryptionKey = Text.Text
 type EncryptionIv = Text.Text
 
+type EncryptionType = AES192
+
 decryptData :: Read a => EncryptionKey -> EncryptionIv -> Text.Text -> Maybe a
 decryptData key iv d = let (key', d') = Text.splitAt (Text.length key + Text.length iv) d
                       in if (Text.append key iv) == key'
@@ -39,10 +41,11 @@ encryptData :: Show a => EncryptionKey -> EncryptionIv -> a -> Text.Text
 encryptData key iv d = Text.concat [key, iv, Text.pack $ show d]
 
 generateIv :: IO EncryptionIv
-generateIv = (flip mapM [1..64] $ (\_ -> randomIO)) >>= return . Text.pack
+generateIv = generateSharedKey
 
 generateSharedKey :: IO EncryptionKey
-generateSharedKey = (flip mapM [1..64] $ (\_ -> randomIO)) >>= return . Text.pack
+generateSharedKey = let KeySizeFixed keySize = cipherKeySize (undefined :: EncryptionType)
+                      in (flip mapM [1..keySize] $ (\_ -> randomIO)) >>= return . Text.pack
 
 decryptionKey :: Int64 -> Text.Text -> Digest SHA512
 decryptionKey id password = hmacGetDigest $ hmac (Encoding.encodeUtf8 $ Text.concat ["pubKeyEncryptionKey", serverSecret]) $ Encoding.encodeUtf8 $ Text.concat [Text.pack $ show id, ":", password]
@@ -53,15 +56,15 @@ generateKeyPair id password = do
   return (pub, encryptPrivateKey id password priv)
 
 encryptPrivateKey :: Int64 -> Text.Text -> PrivateKey -> EncryptedPrivateKey
-encryptPrivateKey id password key = let KeySizeFixed aesSize = cipherKeySize (undefined :: AES192)
+encryptPrivateKey id password key = let KeySizeFixed aesSize = cipherKeySize (undefined :: EncryptionType)
                                         (aesKey, rest) = BA.splitAt aesSize $ BA.convert $ decryptionKey id password :: (BA.Bytes, BA.Bytes)
-                                        CryptoPassed aesCiph = cipherInit aesKey :: CryptoFailable AES192
+                                        CryptoPassed aesCiph = cipherInit aesKey :: CryptoFailable EncryptionType
                                       in Encoding.decodeLatin1 $ B64.encode $ cbcEncrypt aesCiph nullIV $ pad (PKCS7 $ blockSize aesCiph) $ Encoding.encodeUtf8 $ Text.pack $ show key
 
 decryptPrivateKey :: Int64 -> Text.Text -> EncryptedPrivateKey -> Maybe PrivateKey
-decryptPrivateKey id password key = let KeySizeFixed aesSize = cipherKeySize (undefined :: AES192)
+decryptPrivateKey id password key = let KeySizeFixed aesSize = cipherKeySize (undefined :: EncryptionType)
                                         (aesKey, rest) = BA.splitAt aesSize $ BA.convert $ decryptionKey id password :: (BA.Bytes, BA.Bytes)
-                                        CryptoPassed aesCiph = cipherInit aesKey :: CryptoFailable AES192
+                                        CryptoPassed aesCiph = cipherInit aesKey :: CryptoFailable EncryptionType
                                         decodedKey = B64.decodeLenient $ Encoding.encodeUtf8 key
                                       in case unpad (PKCS7 $ blockSize aesCiph) $ cbcDecrypt aesCiph nullIV decodedKey of
                                            Nothing -> Nothing

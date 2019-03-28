@@ -81,7 +81,7 @@ dataFieldModifier hmac ref func = do
 
 editReport :: Int64 -> Maybe Int64 -> [Text.Text] -> CsrfFormApplication
 editReport id template args csrf context req f = do
-  encryptionKey <- getUserEncryptionKey (sessionDbConn context) (fromJust $ sessionUser context) id
+  encryptionKey <- getUserEncryptionKeyFor (sessionDbConn context) (fromJust $ sessionUser context) id
   reportAndVars <- getReport (sessionDbConn context) id template encryptionKey
   toSaveMvar <- newIORef $ DataFieldBuilder { fieldCheckbox = [], fieldValue = [], fieldFile = [] }
   let (rpc, args') = case args of
@@ -117,7 +117,7 @@ editReport id template args csrf context req f = do
     
 saveReport :: Int64 -> CsrfVerifiedApplication
 saveReport id (params, files) context req f = do
-  encryptionKey <- getUserEncryptionKey (sessionDbConn context) (fromJust $ sessionUser context) id
+  encryptionKey <- getUserEncryptionKeyFor (sessionDbConn context) (fromJust $ sessionUser context) id
   variables <- case lookup "fields" params of
                  Just f -> case getSignedData (sessionHasher context) (read $ Text.unpack f) of
                              Just v -> return $ v
@@ -138,7 +138,7 @@ saveReport id (params, files) context req f = do
   redirectSame req f
 
 reportAddList rid (params, _) context req f = do
-  encryptionKey <- getUserEncryptionKey (sessionDbConn context) (fromJust $ sessionUser context) rid
+  encryptionKey <- getUserEncryptionKeyFor (sessionDbConn context) (fromJust $ sessionUser context) rid
   variables <- case lookup "idx" params of
                  Just a -> return $ read $ Text.unpack a
                  Nothing -> throw $ VisibleError "No list to add"

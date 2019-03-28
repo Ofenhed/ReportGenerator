@@ -242,7 +242,7 @@ getUserFromId conn uid passid = do
     [(id, name, pass, Just pub, Just priv)] -> return $ Just $ User { userId = id, userUsername = name, userPassId = pass, userKey = Just (read pub, priv) }
     [(id, name, pass, Nothing, Nothing)] -> return $ Just $ User { userId = id, userUsername = name, userPassId = pass, userKey = Nothing }
 
-getUserEncryptionKey conn user rid = do
+getUserEncryptionKeyFor conn user rid = do
   res <- query conn "SELECT key FROM ReportKey WHERE user = ? AND report = ?" (userId user, rid)
   case res of
     [(Only key)] -> return $ Just key
