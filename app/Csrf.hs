@@ -17,15 +17,16 @@ import System.Random
 
 type CsrfFormApplication = Text.Text -> WebApplication
 type CsrfVerifiedApplication = ([(Text.Text, Text.Text)], [File LC8.ByteString]) -> WebApplication
+sessionKeyName = "csrf"
 
 withCsrf :: CsrfFormApplication -> WebApplication
 withCsrf other context req f = do
   let Just (sessionLookup, sessionInsert) = Vault.lookup (sessionSession context) (vault req)
-  csrf <- sessionLookup "csrf"
+  csrf <- sessionLookup sessionKeyName
   csrf' <- case csrf of
                 Nothing -> do
                   str <- flip mapM [1..20] $ (\_ -> randomRIO ('a', 'z'))
-                  sessionInsert "csrf" $ Text.pack str
+                  sessionInsert sessionKeyName $ Text.pack str
                   return $ Text.pack str
                 Just t -> return t
   other csrf' context req f
@@ -34,7 +35,7 @@ withCsrf other context req f = do
 verifyCsrf :: CsrfVerifiedApplication -> WebApplication
 verifyCsrf target context req f = do
   let Just (sessionLookup, _) = Vault.lookup (sessionSession context) (vault req)
-  csrf <- sessionLookup "csrf"
+  csrf <- sessionLookup sessionKeyName
   (params, files) <- parseRequestBody lbsBackEnd req
   let params' = flip map params $ \(p1, p2) -> (Encoding.decodeUtf8 p1, Encoding.decodeUtf8 p2)
       valid = case (csrf, lookup "csrf" params') of

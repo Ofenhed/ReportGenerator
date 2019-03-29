@@ -56,11 +56,11 @@ getAllChildVariables conn template parent key = do
                  _ -> throw EncryptionMissmatchException
     return $ (tId, tName, values')
 
-getReport :: Connection -> Int64 -> Maybe Int64 -> Maybe EncryptionKey -> IO (Maybe (Report, IOReportContext))
-getReport conn reportId tempId encKey = do
+getReportAndVariables :: Connection -> Int64 -> Maybe Int64 -> Maybe EncryptionKey -> IO (Maybe (Report, IOReportContext))
+getReportAndVariables conn reportId tempId encKey = do
   var <- case tempId of
-           Nothing -> query conn "SELECT Report.id, Report.name, Template.* FROM Report LEFT JOIN Template ON Report.template = Template.id WHERE Report.id = ?" (Only reportId)
-           Just i -> query conn "SELECT Report.id, Report.name, Template.* FROM Report INNER JOIN Template ON Template.id = ? WHERE Report.id = ?" (i, reportId)
+           Nothing -> query conn "SELECT Report.id, Report.name, ReportKey.id IS NOT NULL, Template.* FROM Report LEFT JOIN Template ON Report.template = Template.id LEFT JOIN ReportKey ON Report.id = ReportKey.report WHERE Report.id = ?" (Only reportId)
+           Just i -> query conn "SELECT Report.id, Report.name, ReportKey.id IS NOT NULL, Template.* FROM Report INNER JOIN Template ON Template.id = ? LEFT JOIN ReportKey ON Report.id = ReportKey.report WHERE Report.id = ?" (i, reportId)
   context <- newIORef $ ReportContext { reportContextId = reportId, reportContextVariable = Map.empty, reportContextCustomVariable = Map.empty }
   case var of
     [] -> return Nothing
@@ -158,7 +158,14 @@ getTemplateAndVariables conn id = do
       return $ Just (template', vars)
       
 getReports :: Connection -> IO [Report]
-getReports conn = query_ conn "SELECT Report.id, Report.name, Template.* FROM Report LEFT JOIN Template ON Template.id == Report.template"
+getReports conn = query_ conn "SELECT Report.id, Report.name, ReportKey.id IS NOT NULL, Template.* FROM Report LEFT JOIN Template ON Template.id = Report.template LEFT JOIN ReportKey ON Report.id = ReportKey.report"
+
+getReport :: Connection -> Int64 -> IO (Maybe Report)
+getReport conn id = do r <- query conn "SELECT Report.id, Report.name, ReportKey.id IS NOT NULL, Template.* FROM Report LEFT JOIN Template ON Template.id = Report.template LEFT JOIN ReportKey ON Report.id = ReportKey.report WHERE Report.id = ?" (Only id)
+                       case r of
+                         [r'] -> return $ Just r'
+                         _ -> return Nothing
+
 
 getParentReport conn idx = do
   let (first_select, i) = case idx of

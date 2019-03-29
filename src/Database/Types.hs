@@ -31,13 +31,14 @@ data Template = Template { templateId :: Int64
 
 data Report = Report { reportId :: Int64,
                        reportName :: Text.Text,
+                       reportEncrypted :: Int,
                        reportTemplate :: Template } deriving Show
 
 instance FromRow Template where
   fromRow = Template <$> field <*> field <*> field <*> field <*> field <*> field <*> field
 
 instance FromRow Report where
-  fromRow = Report <$> field <*> field <*> (Template <$> field <*> field <*> field <*> field <*> field <*> field <*> field)
+  fromRow = Report <$> field <*> field <*> field <*> (Template <$> field <*> field <*> field <*> field <*> field <*> field <*> field)
 
 data User = User { userId :: Int64
                  , userUsername :: Text.Text

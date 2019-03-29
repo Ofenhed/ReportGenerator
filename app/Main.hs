@@ -14,6 +14,7 @@ import TemplateFiles
 import Common
 import Csrf
 import Login
+import Encryption
 
 import Network.Wai (Application, responseLBS, responseFile, requestMethod, pathInfo, Response, Middleware)
 import Network.Wai.Session (withSession)
@@ -42,13 +43,15 @@ import qualified Database.SQLite.Simple         as DB
 import qualified Data.ByteString.Lazy.Char8     as LC8
 import qualified Data.ByteString.Char8          as C8
 
+import Debug.Trace
+
 staticDir = "static"
 serverDir = "static/server"
 clientDir = "static/client"
 
 app sess' req f = do
   user <- loggedInUser sess' req
-  let sess = sess' { sessionUser = user }
+  let sess = sess' { sessionUser = traceShowId user }
       call x = showErrors sess (x sess) req f
       toTemplateParent "var" i = return $ TemplateVarParentVar $ read $ Text.unpack i
       toTemplateParent "arr" i = return $ TemplateVarParentVars $ read $ Text.unpack i
@@ -62,17 +65,17 @@ app sess' req f = do
                          f $ responseText status200 [(hContentType, "text/html")] t
 
     -- Generate report
-    ("GET", ["report", "generate", id], Just _) -> do let id' = read $ Text.unpack id
-                                                      key <- getUserEncryptionKeyFor (sessionDbConn sess) (fromJust $ sessionUser sess) id'
-                                                      rep <- render (sessionDbConn sess) key id'
-                                                      f $ responseText status200 [(hContentType, "text/html")] rep
+    -- ("GET", ["report", "generate", id], Just _) -> do let id' = read $ Text.unpack id
+    --                                                   key <- getUserEncryptionKeyFor (sessionDbConn sess) (fromJust $ sessionUser sess) id'
+    --                                                   rep <- render (sessionDbConn sess) key id'
+    --                                                   f $ responseText status200 [(hContentType, "text/html")] rep
 
-
+    ("POST", ["report", "unlock", id], Just _) -> call $ verifyCsrf $ handleKeyDecryption (read $ Text.unpack id :: Int64)
     -- List and edit reports
     ("GET", ["report"], Just _) -> call $ withCsrf $ listReports
     ("POST", ["report"], Just _) -> call $ verifyCsrf $ listReports_
-    ("GET", "report":"sub":id:tid:args, Just _) -> call $ withCsrf $ editReport (read $ Text.unpack id :: Int64) (Just $ read $ Text.unpack tid :: Maybe Int64) args
-    ("GET", "report":id:args, Just _) -> call $ withCsrf $ editReport (read $ Text.unpack id :: Int64) Nothing args
+    ("GET", "report":"sub":id:tid:args, Just _) -> call $ withCsrf $ getWithDecryptionKey (read $ Text.unpack id :: Int64) $ editReport (Just $ read $ Text.unpack tid :: Maybe Int64) args
+    ("GET", "report":id:args, Just _) -> call $ withCsrf $ getWithDecryptionKey (read $ Text.unpack id :: Int64) $ editReport Nothing args
     ("POST", ["report", id], Just _) -> call $ verifyCsrf $ saveReport (read $ Text.unpack id :: Int64)
     ("POST", ["report", id, "list", "add"], Just _) -> call $ verifyCsrf $ reportAddList (read $ Text.unpack id :: Int64)
     -- ("POST", ["report", id, "list", "remove"], Just _) -> call $ verifyCsrf $ reportRemoveList (read $ Text.unpack id :: Int64)

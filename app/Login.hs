@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Login where
+module Login (doLogOut, showLogOut, loggedInUser, showLogin, showLogin_, userPage, userPage_) where
 
 import Common
 import Redirect
@@ -9,13 +9,16 @@ import Database.Resolver
 import Database.Writer
 import Csrf
 import Network.Wai (vault)
+import Encryption
 
 import qualified Data.Vault.Lazy                as Vault
 import qualified Data.Text                      as Text
 
+sessionKeyName = "user"
+
 doLogOut context req = do
   let Just (_, sessionInsert) = Vault.lookup (sessionSession context) (vault req)
-  sessionInsert "user" ""
+  sessionInsert sessionKeyName ""
   return ()
 
 showLogOut context req f = do
@@ -24,16 +27,20 @@ showLogOut context req f = do
 
 loggedInUser context req = do
   let Just (sessionLookup, _) = Vault.lookup (sessionSession context) (vault req)
-  user <- sessionLookup "user"
+  user <- sessionLookup sessionKeyName
   case user of
     Nothing -> return Nothing
     Just t -> case reads $ Text.unpack t of
-                [((uid, passid), "")] -> do
+                [((uid, passid, privKey), "")] -> do
                   user' <- getUserFromId (sessionDbConn context) uid (Just passid)
-                  case user' of
-                    Nothing -> doLogOut context req
-                    _ -> return ()
-                  return user'
+                  user'' <- case (user', privKey) of
+                              (Nothing, _) -> doLogOut context req >> return Nothing
+                              (Just u, Nothing) -> return $ Just u
+                              (Just u, Just privKey') -> return $ Just $
+                                                           case userKey u of
+                                                             Nothing -> u
+                                                             Just (pub, _) -> u { userKey = Just (pub, privKey') }
+                  return user''
                 _ -> return Nothing
 
 showLogin :: CsrfFormApplication
@@ -46,14 +53,21 @@ showLogin csrf context req f = do
 
 showLogin_ :: CsrfVerifiedApplication
 showLogin_ (params, _) context req f = do
-  case (lookup "username" params, lookup "password" params) of
-    (Just u, Just p) -> do user <- getUserWithPassword (sessionDbConn context) u p
-                           case user of
-                             Just u -> do
-                               let Just (_, sessionInsert) = Vault.lookup (sessionSession context) (vault req)
-                               sessionInsert "user" $ Text.pack $ show (userId u, userPassId u)
-                               redirect "/" req f
-                             Nothing -> redirectSame req f
+  case (lookup "username" params, lookup "password" params, lookup "temp_password" params) of
+    (Just u, Just p, temp) -> do user <- getUserWithPassword (sessionDbConn context) u p
+                                 case user of
+                                   Just u -> do
+                                     let Just (_, sessionInsert) = Vault.lookup (sessionSession context) (vault req)
+                                     priv <- case (userKey u, temp) of
+                                               (Just (_, priv), Nothing) -> return $ Just priv
+                                               (Nothing, Nothing) -> return Nothing
+                                               (Just _, Just tempPass) -> case createTemporaryKey u p tempPass of
+                                                                            Just newKey -> return $ Just newKey
+                                                                            Nothing -> throw $ VisibleError "Could not create a new key"
+                                               (Nothing, Just _) -> throw $ VisibleError "You don't have a private key"
+                                     sessionInsert sessionKeyName $ Text.pack $ show (userId u, userPassId u, priv)
+                                     redirect "/" req f
+                                   Nothing -> redirectSame req f
     _ -> throw $ VisibleError "Now, what am I supposed to do with that?"
 
 userPage :: CsrfFormApplication

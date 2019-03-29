@@ -12,6 +12,7 @@ import Csrf
 import Redirect
 import SignedData
 import TemplateFiles
+import Encryption
 
 import Text.Ginger.GVal (toGVal, ToGVal(..), dict, fromFunction)
 import Text.Ginger.Run (liftRun, runtimeErrorMessage)
@@ -23,14 +24,6 @@ import Data.Maybe (isJust, maybe, fromJust)
 import qualified Data.ByteString.Lazy.Char8 as LC8
 import qualified Data.ByteString.Char8      as C8
 import Safe (headMay)
-
-instance ToGVal m Report where
-  toGVal t = dict $ [("id", toGVal $ reportId t)
-                    ,("name", toGVal $ reportName t)
-                    ,("templateId", toGVal $ templateId $ reportTemplate t)
-                    ,("templateIncludeName", toGVal $ templateIncludeName $ reportTemplate t)
-                    ,("templateLongName", toGVal $ templateLongName $ reportTemplate t)
-                    ,("editor", toGVal $ templateEditor $ reportTemplate t)]
 
 listReports :: CsrfFormApplication
 listReports csrf context req f = do
@@ -79,10 +72,10 @@ dataFieldModifier hmac ref func = do
                                     Just j -> return $ toGVal j
     _ -> throw $ VisibleError $ Text.concat ["Variable ", func, " does not exist"]
 
-editReport :: Int64 -> Maybe Int64 -> [Text.Text] -> CsrfFormApplication
-editReport id template args csrf context req f = do
+editReport :: Maybe Int64 -> [Text.Text] -> CsrfFormApplicationWithEnctyptedKey
+editReport template args id key csrf context req f = do
   encryptionKey <- getUserEncryptionKeyFor (sessionDbConn context) (fromJust $ sessionUser context) id
-  reportAndVars <- getReport (sessionDbConn context) id template encryptionKey
+  reportAndVars <- getReportAndVariables (sessionDbConn context) id template encryptionKey
   toSaveMvar <- newIORef $ DataFieldBuilder { fieldCheckbox = [], fieldValue = [], fieldFile = [] }
   let (rpc, args') = case args of
                        "rpc":a -> (True, a)

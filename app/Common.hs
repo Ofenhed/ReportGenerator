@@ -70,4 +70,11 @@ instance ToGVal m TemplateVar where
                     ,("default", toGVal $ templateVarDefault t)
                     ,("children", toGVal $ templateVarChildren t)]
                                          
+instance ToGVal m Report where
+  toGVal t = dict $ [("id", toGVal $ reportId t)
+                    ,("name", toGVal $ reportName t)
+                    ,("templateId", toGVal $ templateId $ reportTemplate t)
+                    ,("templateIncludeName", toGVal $ templateIncludeName $ reportTemplate t)
+                    ,("templateLongName", toGVal $ templateLongName $ reportTemplate t)
+                    ,("editor", toGVal $ templateEditor $ reportTemplate t)]
 
