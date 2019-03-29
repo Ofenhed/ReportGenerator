@@ -46,10 +46,10 @@ data User = User { userId :: Int64
                  , userKey :: Maybe (PublicKey, EncryptedPrivateKey) } deriving Show
 
 setupDatabase conn = withTransaction conn $ do
-    execute_ conn "CREATE TABLE IF NOT EXISTS Setting (name TEXT PRIMARY KEY, value NOT NULL);"
-    execute_ conn "CREATE TABLE IF NOT EXISTS User (id INTEGER PRIMARY KEY ASC, username TEXT NOT NULL, passhash TEXT NOT NULL, salt TEXT NOT NULL, passid INTEGER NOT NULL DEFAULT 0, publicKey TEXT, privateKey TEXT, CONSTRAINT full_set_of_keys CHECK ((publicKey IS NULL AND privateKey IS NULL) OR (publicKey IS NOT NULL AND privateKey IS NOT NULL)), CONSTRAINT unique_username UNIQUE (username));"
+    execute_ conn "CREATE TABLE IF NOT EXISTS SettingEscrowAccount (id INTEGER PRIMARY KEY, user INTEGER NOT NULL, FOREIGN KEY (user) REFERENCES user(id) ON DELETE CASCADE, CONSTRAINT only_one_escrow CHECK (id = 1));"
+    execute_ conn "CREATE TABLE IF NOT EXISTS User (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL, passhash TEXT NOT NULL, salt TEXT NOT NULL, passid INTEGER NOT NULL DEFAULT 0, publicKey TEXT, privateKey TEXT, CONSTRAINT full_set_of_keys CHECK ((publicKey IS NULL AND privateKey IS NULL) OR (publicKey IS NOT NULL AND privateKey IS NOT NULL)), CONSTRAINT unique_username UNIQUE (username));"
     execute_ conn "CREATE TRIGGER IF NOT EXISTS user_pass_counter AFTER UPDATE ON User WHEN OLD.passhash != NEW.passhash BEGIN UPDATE User SET passid = OLD.passid + 1 WHERE id = NEW.id; END;"
-    execute_ conn "CREATE TABLE IF NOT EXISTS Template (id INTEGER PRIMARY KEY ASC, includeName TEXT NOT NULL, longName TEXT NULL, description TEXT NULL, source TEXT NOT NULL, editor TEXT NOT NULL, includable INTEGER NOT NULL, CONSTRAINT unique_name UNIQUE (includeName));"
+    execute_ conn "CREATE TABLE IF NOT EXISTS Template (id INTEGER PRIMARY KEY AUTOINCREMENT, includeName TEXT NOT NULL, longName TEXT NULL, description TEXT NULL, source TEXT NOT NULL, editor TEXT NOT NULL, includable INTEGER NOT NULL, CONSTRAINT unique_name UNIQUE (includeName));"
     let templateVarRelation = "FOREIGN KEY (template) REFERENCES Template(id), FOREIGN KEY (templateVar) REFERENCES TemplateVar(id), FOREIGN KEY (templateVars) REFERENCES TemplateVars(id) \
                              \, CONSTRAINT one_parent CHECK (((template, templateVars) IS (NULL, NULL) AND templateVar IS NOT NULL) OR \
                                                            \((template, templateVar) IS (NULL, NULL) AND templateVars IS NOT NULL) OR \
@@ -57,13 +57,13 @@ setupDatabase conn = withTransaction conn $ do
                              \, CONSTRAINT unique_name_template UNIQUE (template, name)\
                              \, CONSTRAINT unique_name_template_var UNIQUE (templateVar, name)\
                              \, CONSTRAINT unique_name_template_vars UNIQUE (templateVars, name)"
-    execute_ conn $ Query $ Text.concat ["CREATE TABLE IF NOT EXISTS TemplateVar (id INTEGER PRIMARY KEY ASC, template INTEGER NULL, templateVar INTEGER NULL, templateVars INTEGER NULL, name TEXT NOT NULL, description TEXT, data TEXT NULL, ", templateVarRelation, ");"]
-    execute_ conn $ Query $ Text.concat ["CREATE TABLE IF NOT EXISTS TemplateVars (id INTEGER PRIMARY KEY ASC, template INTEGER NULL, templateVar INTEGER NULL, templateVars INTEGER NULL, name TEXT NOT NULL, description TEXT, ", templateVarRelation, ");"]
-    execute_ conn "CREATE TABLE IF NOT EXISTS Report (id INTEGER PRIMARY KEY ASC, template INTEGER NOT NULL, name TEXT NOT NULL, owner INTEGER NOT NULL, FOREIGN KEY (template) REFERENCES TemplateVar(id), FOREIGN KEY (owner) REFERENCES User(id));"
-    execute_ conn "CREATE TABLE IF NOT EXISTS ReportVar (id INTEGER PRIMARY KEY ASC, template INTEGER NOT NULL, parent INTEGER NOT NULL, data TEXT NULL, iv TEXT NULL, FOREIGN KEY (template) REFERENCES TemplateVar(id), CONSTRAINT no_arrays UNIQUE (template, parent));"
-    execute_ conn "CREATE TABLE IF NOT EXISTS ReportVars (id INTEGER PRIMARY KEY ASC, template INTEGER NOT NULL, parent INTEGER NOT NULL, data TEXT NULL, iv TEXT NULL, weight INTEGER NOT NULL, FOREIGN KEY (template) REFERENCES TemplateVars(id), FOREIGN KEY (parent) REFERENCES ReportVar(id));"
-    execute_ conn "CREATE TABLE IF NOT EXISTS CustVar (id INTEGER PRIMARY KEY ASC, name TEXT NOT NULL, report INTEGER NOT NULL, data TEXT NULL, iv TEXT NULL, FOREIGN KEY (report) REFERENCES Report(id), CONSTRAINT no_arrays UNIQUE (report, name));"
-    execute_ conn "CREATE TABLE IF NOT EXISTS ReportKey (id INTEGER PRIMARY KEY ASC, user INTEGER NOT NULL, report INTEGER NOT NULL, key TEXT NOT NULL, FOREIGN KEY (user) REFERENCES User(id), FOREIGN KEY (report) REFERENCES Report(id), CONSTRAINT only_one_key_per_report_and_user UNIQUE (user, report));"
+    execute_ conn $ Query $ Text.concat ["CREATE TABLE IF NOT EXISTS TemplateVar (id INTEGER PRIMARY KEY AUTOINCREMENT, template INTEGER NULL, templateVar INTEGER NULL, templateVars INTEGER NULL, name TEXT NOT NULL, description TEXT, data TEXT NULL, ", templateVarRelation, ");"]
+    execute_ conn $ Query $ Text.concat ["CREATE TABLE IF NOT EXISTS TemplateVars (id INTEGER PRIMARY KEY AUTOINCREMENT, template INTEGER NULL, templateVar INTEGER NULL, templateVars INTEGER NULL, name TEXT NOT NULL, description TEXT, ", templateVarRelation, ");"]
+    execute_ conn "CREATE TABLE IF NOT EXISTS Report (id INTEGER PRIMARY KEY AUTOINCREMENT, template INTEGER NOT NULL, name TEXT NOT NULL, owner INTEGER NOT NULL, FOREIGN KEY (template) REFERENCES TemplateVar(id), FOREIGN KEY (owner) REFERENCES User(id));"
+    execute_ conn "CREATE TABLE IF NOT EXISTS ReportVar (id INTEGER PRIMARY KEY AUTOINCREMENT, template INTEGER NOT NULL, parent INTEGER NOT NULL, data TEXT NULL, iv TEXT NULL, FOREIGN KEY (template) REFERENCES TemplateVar(id), CONSTRAINT no_arrays UNIQUE (template, parent));"
+    execute_ conn "CREATE TABLE IF NOT EXISTS ReportVars (id INTEGER PRIMARY KEY AUTOINCREMENT, template INTEGER NOT NULL, parent INTEGER NOT NULL, data TEXT NULL, iv TEXT NULL, weight INTEGER NOT NULL, FOREIGN KEY (template) REFERENCES TemplateVars(id), FOREIGN KEY (parent) REFERENCES ReportVar(id));"
+    execute_ conn "CREATE TABLE IF NOT EXISTS CustVar (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, report INTEGER NOT NULL, data TEXT NULL, iv TEXT NULL, FOREIGN KEY (report) REFERENCES Report(id), CONSTRAINT no_arrays UNIQUE (report, name));"
+    execute_ conn "CREATE TABLE IF NOT EXISTS ReportKey (id INTEGER PRIMARY KEY AUTOINCREMENT, user INTEGER NOT NULL, report INTEGER NOT NULL, key TEXT NOT NULL, FOREIGN KEY (user) REFERENCES User(id), FOREIGN KEY (report) REFERENCES Report(id), CONSTRAINT only_one_key_per_report_and_user UNIQUE (user, report));"
 
     -- Test data
 
