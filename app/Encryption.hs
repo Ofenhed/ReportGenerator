@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Encryption (CsrfFormApplicationWithEnctyptedKey, CsrfVerifiedApplicationWithEnctyptedKey, createTemporaryKey, getWithDecryptionKey, handleKeyDecryption) where
+module Encryption (CsrfFormApplicationWithEnctyptedKey, CsrfVerifiedApplicationWithEnctyptedKey, createTemporaryKey, getWithDecryptionKey, handleKeyDecryption, clearDecryptionKeys) where
 
 -- import Types
 import Common
@@ -26,7 +26,7 @@ type CsrfFormApplicationWithEnctyptedKey = Int64 -> Maybe EncryptionKey -> CsrfF
 type CsrfVerifiedApplicationWithEnctyptedKey = Int64 -> Maybe EncryptionKey -> CsrfFormApplication
 sessionKeyName = "encryption_keys"
 
-clearDecryptionKey context req = do
+clearDecryptionKeys context req = do
   let Just (_, sessionInsert) = Vault.lookup (sessionSession context) (vault req)
   sessionInsert sessionKeyName ""
 

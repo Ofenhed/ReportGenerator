@@ -19,6 +19,7 @@ sessionKeyName = "user"
 doLogOut context req = do
   let Just (_, sessionInsert) = Vault.lookup (sessionSession context) (vault req)
   sessionInsert sessionKeyName ""
+  clearDecryptionKeys context req
   return ()
 
 showLogOut context req f = do
