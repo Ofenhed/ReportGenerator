@@ -154,7 +154,6 @@ addUser conn username password = withTransaction conn $ do
   id <- lastInsertRowId conn
   (pub, priv) <- generateKeyPair id password
   execute conn "UPDATE User SET publicKey = ?, privateKey = ? WHERE id = ?" (show pub, priv, id)
-  [(Only d)] <- query conn "SELECT privateKey FROM User WHERE id = ?" (Only id)
 
 updateUserPassword :: Connection -> Text.Text -> Text.Text -> Text.Text -> IO Bool
 updateUserPassword conn username oldpass newpass = withTransaction conn $ do
