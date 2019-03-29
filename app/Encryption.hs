@@ -64,7 +64,7 @@ getWithDecryptionKey rid other csrf context req f = do
               [((rid', key'), [])] -> if rid == rid'
                                         then other rid (Just key') csrf context req f
                                         else queryDecryptionKey report' csrf context req f
-              _ -> throw $ VisibleError "Could not read decryption key"
+              _ -> queryDecryptionKey report' csrf context req f
 
 handleKeyDecryption :: Int64 -> CsrfVerifiedApplication
 handleKeyDecryption rid (params, _) context req f = do
@@ -83,23 +83,3 @@ handleKeyDecryption rid (params, _) context req f = do
               Nothing -> throw $ VisibleError "Could not decrypt private key"
               Just d -> deepseq d $ sessionInsert sessionKeyName (Text.pack $ show (rid, d)) >> redirectBack req f
     _ -> throw $ VisibleError "Parameters missing"
--- postWithDecryptionKey :: Int64 -> CsrfVerifiedApplication -> CsrfVerifiedApplication 
--- postWithDecryptionKey rid other params context req f
---   let Just (sessionLookup, _) = Vault.lookup (sessionSession context) $ vault req
---   key <- sessionLookup sessionKeyNameKeys
---   case key of
---     Nothing -> raise $ VisibleErrorWithStatus status403 "This report is locked"
---     Just key' -> other rid key' 
--- verifyCsrf :: CsrfVerifiedApplication -> WebApplication
--- verifyCsrf target context req f = do
---   let Just (sessionLookup, _) = Vault.lookup (sessionSession context) (vault req)
---   csrf <- sessionLookup sessionKeyNameKeys
---   (params, files) <- parseRequestBody lbsBackEnd req
---   let params' = flip map params $ \(p1, p2) -> (Encoding.decodeUtf8 p1, Encoding.decodeUtf8 p2)
---       valid = case (csrf, lookup "csrf" params') of
---                 (Just c1, Just c2) -> c1 == c2
---                 _ -> False
---   if valid
---     then target (params', files) context req f
---     else throw $ VisibleError "Oh noes, a CSRF attack. I give up, change anything."
-

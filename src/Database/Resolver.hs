@@ -29,8 +29,8 @@ getAllChildVariable conn template parent key = do
   variables <- query conn (Query $ Text.concat ["SELECT TemplateVar.id, ReportVar.id, TemplateVar.name, ReportVar.iv, ReportVar.data, TemplateVar.data FROM TemplateVar LEFT JOIN ReportVar ON ReportVar.template = TemplateVar.id AND ReportVar.parent = ? WHERE TemplateVar.", target, " = ?"]) (parent, val)
   flip mapM variables $ \(tid, rid, name, iv, rd, td) -> case traceShowId (key, iv, rd) of
     (Just key, Just iv, Just rd') -> case decryptData key iv rd' of
-                                       Just dec -> return (tid, rid, name, dec)
-                                       Nothing -> throw CouldNotDecryptException
+                                       Right dec -> return (tid, rid, name, dec)
+                                       Left _ -> throw CouldNotDecryptException
     (Just key, Just iv, Nothing) -> return (tid, rid, name, Nothing)
     (Nothing, Nothing, _) -> case rid of
                               Just _ -> return (tid, rid, name, rd)
@@ -49,8 +49,8 @@ getAllChildVariables conn template parent key = do
     values <- query conn "SELECT id, data, iv FROM ReportVars WHERE parent = ? AND template = ? ORDER BY weight ASC" (parent, tId)
     values' <- flip mapM values $ \(id, d, iv) -> case traceShowId (key, iv, d) of
                  (Just key, Just iv, Just d') -> case decryptData key iv d' of
-                                          Just dec -> return (id, dec)
-                                          Nothing -> throw CouldNotDecryptException
+                                          Right dec -> return (id, dec)
+                                          Left _ -> throw CouldNotDecryptException
                  (Just key, Just iv, Nothing) -> return (id, d)
                  (Nothing, Nothing, _) -> return (id, d)
                  _ -> throw EncryptionMissmatchException

@@ -19,8 +19,6 @@ import System.Random (randomRIO)
 import qualified Data.Text as Text
 import qualified Data.Map as Map
 
-import Debug.Trace
-
 changeTemplate :: Connection -> (Maybe Template -> (Maybe Template, a)) -> Int64 -> IO a
 changeTemplate conn f id = do
   template <- query conn "SELECT * FROM Template WHERE id == ?" (Only id)
@@ -93,8 +91,11 @@ setVariable conn encKey report path value = withTransaction conn $ do
     then throw $ VisibleError "The changed variable does not belong to the current report"
     else return ()
   (iv, value, plain) <- case encKey of
-                          Just k -> generateIv >>= \iv -> return (Just iv, Just $ encryptData k iv value, value)
+                          Just k -> generateIv >>= \iv -> return (Just iv, case encryptData k iv value of Right r -> Just r ; Left _ -> Nothing, value)
                           Nothing -> return (Nothing, value, value)
+  case (iv, value) of
+    (Just _, Nothing) -> throw $ VisibleError "Encryption failed"
+    _ -> return ()
   case endOfPath of
     IndexTempVar i:p -> do let parent = case p of
                                           [IndexArr p] -> p
@@ -129,7 +130,10 @@ addArray conn encKey report path val = withTransaction conn $ do
     else return ()
   (iv, val) <- case encKey of
                   Nothing -> return (Nothing, val)
-                  Just key -> generateIv >>= \iv -> return (Just iv, Just $ encryptData key iv val)
+                  Just key -> generateIv >>= \iv -> return (Just iv, case encryptData key iv val of Right r -> Just r ; Left _ -> Nothing)
+  case (iv, val) of
+    (Just _, Nothing) -> throw $ VisibleError "Encryption failed"
+    _ -> return ()
   case endOfPath of
     IndexTempVars i:p -> do let parent = case p of
                                            [IndexArr p] -> p
@@ -151,7 +155,6 @@ addUser conn username password = withTransaction conn $ do
   (pub, priv) <- generateKeyPair id password
   execute conn "UPDATE User SET publicKey = ?, privateKey = ? WHERE id = ?" (show pub, priv, id)
   [(Only d)] <- query conn "SELECT privateKey FROM User WHERE id = ?" (Only id)
-  traceShowM $ decryptPrivateKey id password d
 
 updateUserPassword :: Connection -> Text.Text -> Text.Text -> Text.Text -> IO Bool
 updateUserPassword conn username oldpass newpass = withTransaction conn $ do
