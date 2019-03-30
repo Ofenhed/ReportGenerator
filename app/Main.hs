@@ -43,15 +43,20 @@ import qualified Database.SQLite.Simple         as DB
 import qualified Data.ByteString.Lazy.Char8     as LC8
 import qualified Data.ByteString.Char8          as C8
 
-import Debug.Trace
 
 staticDir = "static"
 serverDir = "static/server"
 clientDir = "static/client"
 
+generateReport :: CsrfFormApplicationWithEnctyptedKey
+generateReport id key csrf context req f = do
+  encryptionKey <- getUserEncryptionKeyFor (sessionDbConn context) (fromJust $ sessionUser context) id
+  rep <- render (sessionDbConn context) encryptionKey id
+  f $ responseText status200 [(hContentType, "text/html")] rep
+
 app sess' req f = do
   user <- loggedInUser sess' req
-  let sess = sess' { sessionUser = traceShowId user }
+  let sess = sess' { sessionUser = user }
       call x = showErrors sess (x sess) req f
       toTemplateParent "var" i = return $ TemplateVarParentVar $ read $ Text.unpack i
       toTemplateParent "arr" i = return $ TemplateVarParentVars $ read $ Text.unpack i
@@ -65,10 +70,8 @@ app sess' req f = do
                          f $ responseText status200 [(hContentType, "text/html")] t
 
     -- Generate report
-    -- ("GET", ["report", "generate", id], Just _) -> do let id' = read $ Text.unpack id
-    --                                                   key <- getUserEncryptionKeyFor (sessionDbConn sess) (fromJust $ sessionUser sess) id'
-    --                                                   rep <- render (sessionDbConn sess) key id'
-    --                                                   f $ responseText status200 [(hContentType, "text/html")] rep
+    ("GET", ["report", "generate", id], Just _) -> let id' = read $ Text.unpack id
+                                                     in call $ withCsrf $ getWithDecryptionKey id' $ generateReport
 
     ("POST", ["report", "unlock", id], Just _) -> call $ verifyCsrf $ handleKeyDecryption (read $ Text.unpack id :: Int64)
     -- List and edit reports

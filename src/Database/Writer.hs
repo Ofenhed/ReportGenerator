@@ -110,6 +110,7 @@ setVariable conn encKey report path value = withTransaction conn $ do
                            return True
     [IndexVal i] -> execute conn "UPDATE ReportVar SET data = ?, iv = ? WHERE id = ? AND parent = ?" (value, iv, i, report) >> return True
     [IndexArr i] -> execute conn "UPDATE ReportVars SET data = ?, iv = ? WHERE id = ? AND parent = ?" (value, iv, i, report) >> return True
+    [IndexTempVars i] -> execute conn "INSERT INTO ReportVars (template, parent, data, iv) VALUES (?, ?, ?, ?)" (i, report, value, iv) >> return True
                        
     [IndexVal i, IndexVal parent] -> execute conn "UPDATE ReportVar SET data = ?, iv = ? WHERE id = ? AND parent = ?" (value, iv, i, parent) >> return True
     [IndexVal i, IndexArr parent] -> execute conn "UPDATE ReportVar SET data = ?, iv = ? WHERE id = ? AND parent = ?" (value, iv, i, parent) >> return True
@@ -139,7 +140,7 @@ addArray conn encKey report path val = withTransaction conn $ do
                                            [IndexArr p] -> p
                                            [IndexVal p] -> p
                                            [] -> report
-                            executeNamed conn "INSERT INTO ReportVars (template, parent, weight, data, iv) VALUES (:template, :parent, (SELECT MAX((SELECT weight FROM ReportVars WHERE parent = :parent UNION SELECT 0)) + 1), :data, :iv)" [":template" := i, ":parent" := parent, ":data" := val, ":iv" := iv]
+                            executeNamed conn "INSERT INTO ReportVars (template, parent, data, iv) VALUES (:template, :parent, :data, :iv)" [":template" := i, ":parent" := parent, ":data" := val, ":iv" := iv]
                             newIndex <- lastInsertRowId conn
                             return $ reverse $ IndexArr newIndex:drop 1 reversedPath
     _ -> throw $ VisibleError "Not yet implemented"

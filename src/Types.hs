@@ -10,6 +10,7 @@ import Data.IORef (IORef)
 import Data.Default.Class (def)
 import Network.HTTP.Types (Status)
 import Data.Int (Int64)
+import Text.XML (Document(documentRoot), Element(..), Node(..), Name(nameLocalName))
 
 data IndexType = IndexVal Int64
                | IndexArr Int64
@@ -90,3 +91,22 @@ data TemplateVarParent = TemplateVarParent Int64
 data VisibleError = VisibleError Text.Text
                   | VisibleErrorWithStatus Status Text.Text deriving Show
 instance Exception VisibleError
+
+instance ToGVal m Document where
+  toGVal = toGVal . documentRoot
+
+instance ToGVal m Element where
+  toGVal elem = def { isNull = False
+                    , asLookup = Just $ flip lookup [("attr", def { isNull = False
+                                                                  , asLookup = Just $ flip Map.lookup $ 
+                                                                      Map.mapKeys nameLocalName $
+                                                                      Map.map toGVal $ elementAttributes elem})
+                                                    ,("type", toGVal $ nameLocalName $ elementName elem)
+                                                    ,("children", def { isNull = null $ elementNodes elem
+                                                                      , asList = Just $ map toGVal $ elementNodes elem })]
+                    , asList = Just $ map toGVal $ elementNodes elem }
+
+instance ToGVal m Node where
+  toGVal (NodeElement e) = toGVal e
+  toGVal (NodeContent t) = toGVal t
+  toGVal _ = def { isNull = True }

@@ -57,6 +57,7 @@ dependencies:
 - warp
 - warp-tls
 - websockets
+- xml-conduit
 
 library:
   source-dirs:

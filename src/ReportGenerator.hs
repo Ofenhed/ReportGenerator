@@ -10,6 +10,7 @@ import GingerExtra
 import qualified Data.Text as Text
 
 import Data.Default.Class
+import System.FilePath (isPathSeparator, normalise)
 import Text.Ginger.Run (makeContextHtmlM, runGingerT, runtimeErrorMessage)
 import Text.Ginger.Parse (parseGinger)
 import Text.Ginger (toGVal, ParserError(..), VarName, Run, liftRun)
@@ -17,10 +18,13 @@ import Text.Ginger.GVal (fromFunction, GVal(..))
 import Text.Ginger.Html (unsafeRawHtml, htmlSource, html, Html)
 import Text.Ginger.AST (Template)
 import Data.Maybe (maybe)
+import Text.XML (parseText)
 import Data.IORef (newIORef, atomicModifyIORef', writeIORef, readIORef, IORef())
 import Data.List (isPrefixOf, foldl')
 import Database.SQLite.Simple (Connection)
 import qualified Data.DList                     as D
+import qualified Data.Text                      as Text
+import qualified Data.Text.Lazy                 as LText
 import qualified Data.Text.IO                   as TextIO
 import Control.Monad.Writer (execWriter, tell)
 import Control.DeepSeq (deepseq)
@@ -28,15 +32,22 @@ import qualified Data.Map                       as Map
 import Data.Int (Int64)
 import qualified TextReplace as Replacer
 
+import Debug.Trace
+
 includeResolver conn context encKey file = do
-  case Text.splitOn "/" $ Text.pack file of
-    [".", "template", t] -> getTemplate conn context encKey t True >>= return . (maybe Nothing (Just . Text.unpack))
+  case Text.split isPathSeparator $ Text.pack $ normalise file of
+    ["template", t] -> getTemplate conn context encKey t True >>= return . (maybe Nothing (Just . Text.unpack))
     _ -> return $ Nothing
 
 data ReportState = ReportState { stateReportId :: Int64,
                                  stateTemplateId :: Int64,
                                  stateHeadingState :: IOHeading,
                                  stateDbConn :: Connection }
+
+parseXml [(Nothing, d)] = case parseText def $ LText.fromStrict $ asText d of 
+                            Left err -> throw $ VisibleError $ Text.append "XML Parsing error: " $ Text.pack $ show err
+                            Right p -> return $ toGVal $ traceShowId p
+ 
 
 contextLookup :: ReportState -> IOReportContext -> VarName -> Run p IO Html (GVal (Run p IO Html))
 contextLookup reportState context var = do
@@ -49,6 +60,7 @@ contextLookup reportState context var = do
              "table_of_contents" -> return $ toGVal $ tableOfContentPlaceholder
              "template" -> liftRun $ readIORef context >>= return . toGVal . reportContextVariable
              "set_content_type" -> return $ toGVal () -- TODO: Implement a way to change generated report type. Useful for reports that consist of a single file.
+             "parse_xml" -> return $ fromFunction parseXml
              -- "extra_builtins" -> return $ toGVal $ Map.map fromFunction $ Map.fromList gingerFunctions
              "report" -> liftRun $ readIORef context >>= return . toGVal . reportContextCustomVariable
              _ -> case lookup var gingerFunctions of
