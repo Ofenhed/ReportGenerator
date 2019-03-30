@@ -8,7 +8,6 @@ copyright:           "2019 Marcus Ofenhed"
 
 extra-source-files:
 - README.md
-- ChangeLog.md
 
 # Metadata used when publishing your package
 # synopsis:            A report generator for penetration testing reports.
@@ -83,13 +82,13 @@ executables:
     dependencies:
     - ReportGenerator
 
-tests:
-  ReportGenerator-test:
-    main:                Spec.hs
-    source-dirs:         test
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
-    dependencies:
-    - ReportGenerator
+      # tests:
+      #   ReportGenerator-test:
+      #     main:                Spec.hs
+      #     source-dirs:         test
+      #     ghc-options:
+      #     - -threaded
+      #     - -rtsopts
+      #     - -with-rtsopts=-N
+      #     dependencies:
+      #     - ReportGenerator
