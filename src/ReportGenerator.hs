@@ -22,12 +22,11 @@ import Data.List (isPrefixOf, foldl')
 import Database.SQLite.Simple (Connection)
 import qualified Data.DList                     as D
 import qualified Data.Text.IO                   as TextIO
-import Data.Text.AhoCorasick.Automaton (CaseSensitivity(CaseSensitive))
-import qualified Data.Text.AhoCorasick.Replacer as Replacer
 import Control.Monad.Writer (execWriter, tell)
 import Control.DeepSeq (deepseq)
 import qualified Data.Map                       as Map
 import Data.Int (Int64)
+import qualified TextReplace as Replacer
 
 includeResolver conn context encKey file = do
   case Text.splitOn "/" $ Text.pack file of
@@ -77,7 +76,7 @@ render conn encKey report = do
                    toc <- finalizeTableOfContents headerState
                    deepseq finalized $ return () -- finalized must be fully evaluated before the replacer is run
                                                  -- to make sure that any exceptions are caught.
-                   let replacer = Replacer.build CaseSensitive $ toc:finalized
+                   let replacer = Replacer.build Replacer.CaseSensitive $ toc:finalized
                    let h = execWriter $ mapM (tell . (Replacer.run replacer) . htmlSource) $ D.toList vec'
                    return h
                    --case finalized of

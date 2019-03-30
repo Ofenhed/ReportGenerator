@@ -19,8 +19,13 @@ extra-source-files:
 # common to point users to the README.md file.
 description:         Please see the README on GitHub at <https://github.com/Ofenhed/ReportGenerator#readme>
 
+flags:
+  llvm:
+    description: Compile with much faster text search. Requires llvm >= 6.
+    manual: True
+    default: True
+
 dependencies:
-- alfred-margaret
 - base >= 4.7 && < 5
 - base16-bytestring
 - base64-bytestring
@@ -52,12 +57,20 @@ dependencies:
 - warp
 - warp-tls
 - websockets
-  # - file-embed
-  # - filepath
-  # - random
 
 library:
-  source-dirs: src
+  source-dirs:
+    - src/
+  when:
+    - condition: flag(llvm)
+      then:
+        dependencies:
+        - alfred-margaret
+        source-dirs:
+        - lib/textreplace-llvm/
+      else:
+        source-dirs:
+        - lib/textreplace/
 
 executables:
   ReportGenerator-exe:
