@@ -17,6 +17,7 @@ import Encryption
 import Text.Ginger.GVal (toGVal, ToGVal(..), dict, fromFunction)
 import Text.Ginger.Run (liftRun, runtimeErrorMessage)
 import Data.IORef (newIORef, readIORef, atomicModifyIORef')
+import System.FilePath (isPathSeparator, normalise)
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Encoding
@@ -100,10 +101,10 @@ editReport template args id key csrf context req f = do
                           --                                         _ -> throw $ VisibleError "Invalid report ID."
                           --                                     _ -> throw $ VisibleError "Function delete_template_var expects one named variable, (delete_id=varid)"
                           _ -> dataFieldModifier (sessionHasher context) toSaveMvar name
-          includer parent name = case Text.splitOn "/" $ Text.pack name of
-                                   [".", "default"] -> parent name
-                                   [".", "template_curr"] -> return $ Just $ Text.unpack $ templateEditor $ reportTemplate report
-                                   [".", "template", sub] -> getTemplateEditor (sessionDbConn context) context' encryptionKey sub True >>= return . (maybe Nothing $ Just . Text.unpack)
+          includer parent name = case Text.split isPathSeparator $ Text.pack $ normalise name of
+                                   ["default"] -> parent name
+                                   ["template_curr"] -> return $ Just $ Text.unpack $ templateEditor $ reportTemplate report
+                                   ["template", sub] -> getTemplateEditor (sessionDbConn context) context' encryptionKey sub True >>= return . (maybe Nothing $ Just . Text.unpack)
                                    _ -> return Nothing
       result <- runTemplate context (Just includer) "edit_report" lookup
       f $ responseText status200 [(hContentType, "text/html")] result
