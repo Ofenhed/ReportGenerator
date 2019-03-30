@@ -25,8 +25,8 @@ flags:
     default: True
 
 dependencies:
-- base >= 4.7 && < 5
 - base16-bytestring
+- base >= 4.7 && < 5
 - base64-bytestring
 - bytestring
 - containers
@@ -37,15 +37,16 @@ dependencies:
 - deepseq
 - dlist
 - file-embed
+- filepath
 - ginger
 - http-types
 - memory
 - mtl
 - random
-- sqlite-simple
 - safe
-- text
+- sqlite-simple
 - template-haskell
+- text
 - transformers
 - vault
 - vector

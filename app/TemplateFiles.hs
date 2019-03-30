@@ -22,6 +22,7 @@ import Control.Monad.Writer (execWriter, tell)
 import Text.Ginger.Html (htmlSource)
 import Data.Maybe (maybe, isNothing)
 import Text.Ginger.GVal (ToGVal(..))
+import System.FilePath ((</>), (<.>), normalise)
 
 import qualified Data.DList                     as D
 import qualified Data.Map                       as Map
@@ -40,12 +41,13 @@ instance ToGVal m User where
 cachedAtCompile = flip lookup $(embedDir "templates")
 
 -- | Read a file at compile time, that's read again at runtime. Use runtime version if it's available.
-cachedReadFile filename = catchIOError (openBinaryFile ("templates/" ++ filename ++ ".tpl") ReadMode >>= hGetContents >>= return . Just) $
-                                       \error -> if isDoesNotExistError error
-                                                   then case cachedAtCompile $ filename ++ ".tpl" of
-                                                          Just content -> return $ Just $ C8.unpack content
-                                                          Nothing -> return Nothing
-                                                   else return Nothing
+cachedReadFile filename = let filename' = normalise filename
+                            in catchIOError (openBinaryFile ("templates" </> filename' <.> "tpl") ReadMode >>= hGetContents >>= return . Just) $
+                                            \error -> if isDoesNotExistError error
+                                                        then case cachedAtCompile $ filename' <.> "tpl" of
+                                                               Just content -> return $ Just $ C8.unpack content
+                                                               Nothing -> return Nothing
+                                                        else return Nothing
 
 runTemplate context fetcher filename lookup = do
   content <- cachedReadFile filename
