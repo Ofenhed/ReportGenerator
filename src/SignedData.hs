@@ -1,6 +1,6 @@
 -- {-# LANGUAGE ScopedTypeVariables, TypeApplications, UndecidableInstances, FlexibleInstances, AllowAmbiguousTypes #-}
 -- {-# LANGUAGE ScopedTypeVariables, QuantifiedConstraints #-}
-module SignedData (SignedData, signData, getSignedData) where
+module SignedData (SignedData, signData, getSignedData, verifySignedData) where
 
 import Crypto.Hash (Digest, digestFromByteString, hashDigestSize, HashAlgorithm)
 import Crypto.MAC.HMAC (hmacGetDigest, finalize, update)
@@ -10,25 +10,29 @@ import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Base16 as Hex
 
 data SignedData a h = Signed a (Digest h)
+data UnverifiedSignedData h = UnverifiedSigned String (Digest h)
 
 signData hmac d = let toSign = C8.pack $ show d
                     in Signed d (hmacGetDigest $ finalize $ update hmac toSign)
 
-getSignedData hmac (Signed d h) = if (hmacGetDigest $ finalize $ update hmac $ C8.pack $ show d) == h
-                                    then Just d
-                                    else Nothing
+getSignedData (Signed d _) = d
+
+verifySignedData hmac (UnverifiedSigned s h) = if (hmacGetDigest $ finalize $ update hmac $ C8.pack s) == h
+                                                  then case reads s of
+                                                         [(s', [])] -> Just $ Signed s' h
+                                                         _ -> Nothing
+                                                  else Nothing
 
 instance (Show a, HashAlgorithm h) => Show (SignedData a h) where
   show (Signed t d) = show d ++ show t
 
-instance (Read a, HashAlgorithm h) => Read (SignedData a h) where
+instance HashAlgorithm h => Read (UnverifiedSignedData h) where
   readsPrec l [] = []
   readsPrec l x = let takeHash :: HashAlgorithm a => a -> (Maybe (Digest a), String)
                       takeHash alg = let (hash,rest) = splitAt (2 * hashDigestSize alg) x
                                          (hex, _) = Hex.decode $ C8.pack hash
                                        in (digestFromByteString $ hex, rest)
                       (hash, rest) = takeHash undefined
-                      rest' = readsPrec l rest
-                    in flip mapMaybe rest' $ \(val, trash) -> case hash of
-                                                                Just d' -> Just (Signed val d', trash)
-                                                                Nothing -> Nothing
+                    in case hash of
+                         Just d' -> [(UnverifiedSigned rest d', [])]
+                         Nothing -> []

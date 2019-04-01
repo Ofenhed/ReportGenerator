@@ -22,6 +22,9 @@
 {% if rpc == 0 %}
   {% set title = "test<script>" %}
   {% include "default" %}
+  {% if report.encrypted %}{% else %}
+    <div class="warning">THIS REPORT IS NOT ENCRYPTED. DO NOT ADD SENSITIVE DATA TO IT!</div>
+  {% endif %}
   <form method="post" enctype="multipart/form-data" action="/report/{{report.id}}">
   <h1>{{ report.name }}</h1>
   <div style="border: 1px solid #0f0">

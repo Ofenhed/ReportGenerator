@@ -57,6 +57,14 @@
       div.ul-tree ul.ul-tree.variable > li > label::before {
         content: "\01F4DD"
       }
+      div.warning {
+        border: 5px solid #a00;
+        background: #c00;
+        color: #fff;
+        padding: 1ex;
+        margin: 0px;
+        text-align: center;
+      }
       body {
         max-width: 100%;
         display: grid;

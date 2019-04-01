@@ -113,8 +113,8 @@ saveReport :: Int64 -> CsrfVerifiedApplication
 saveReport id (params, files) context req f = do
   encryptionKey <- getUserEncryptionKeyFor (sessionDbConn context) (fromJust $ sessionUser context) id
   variables <- case lookup "fields" params of
-                 Just f -> case getSignedData (sessionHasher context) (read $ Text.unpack f) of
-                             Just v -> return $ v
+                 Just f -> case verifySignedData (sessionHasher context) (read $ Text.unpack f) of
+                             Just v -> return $ getSignedData v
                              Nothing -> throw $ VisibleError "I don't think that's something I signed..."
                  Nothing -> throw $ VisibleError "No fields received"
   flip mapM (fieldValue variables) $ \variable -> do

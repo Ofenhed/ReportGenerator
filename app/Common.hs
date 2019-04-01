@@ -76,5 +76,6 @@ instance ToGVal m Report where
                     ,("templateId", toGVal $ templateId $ reportTemplate t)
                     ,("templateIncludeName", toGVal $ templateIncludeName $ reportTemplate t)
                     ,("templateLongName", toGVal $ templateLongName $ reportTemplate t)
-                    ,("editor", toGVal $ templateEditor $ reportTemplate t)]
+                    ,("editor", toGVal $ templateEditor $ reportTemplate t)
+                    ,("encrypted", toGVal $ reportEncrypted t)]
 
