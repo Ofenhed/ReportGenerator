@@ -73,7 +73,7 @@ dataFieldModifier hmac ref func = do
                                     Just j -> return $ toGVal j
     _ -> throw $ VisibleError $ Text.concat ["Variable ", func, " does not exist"]
 
-editReport :: Maybe Int64 -> [Text.Text] -> CsrfFormApplicationWithEnctyptedKey
+editReport :: Maybe Int64 -> [Text.Text] -> CsrfFormApplicationWithEncryptedKey
 editReport template args id key csrf context req f = do
   encryptionKey <- getUserEncryptionKeyFor (sessionDbConn context) (fromJust $ sessionUser context) id
   reportAndVars <- getReportAndVariables (sessionDbConn context) id template encryptionKey

@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Encryption (CsrfFormApplicationWithEnctyptedKey, CsrfVerifiedApplicationWithEnctyptedKey, createTemporaryKey, getWithDecryptionKey, handleKeyDecryption, clearDecryptionKeys) where
+module Encryption (CsrfFormApplicationWithEncryptedKey, CsrfVerifiedApplicationWithEncryptedKey, createTemporaryKey, getWithDecryptionKey, handleKeyDecryption, clearDecryptionKeys) where
 
 -- import Types
 import Common
@@ -22,8 +22,8 @@ import qualified Data.ByteString.Lazy.Char8 as LC8
 import qualified Data.Text.Encoding as Encoding
 import System.Random
 
-type CsrfFormApplicationWithEnctyptedKey = Int64 -> Maybe EncryptionKey -> CsrfFormApplication
-type CsrfVerifiedApplicationWithEnctyptedKey = Int64 -> Maybe EncryptionKey -> CsrfFormApplication
+type CsrfFormApplicationWithEncryptedKey = Int64 -> Maybe EncryptionKey -> CsrfFormApplication
+type CsrfVerifiedApplicationWithEncryptedKey = Int64 -> Maybe EncryptionKey -> CsrfFormApplication
 sessionKeyName = "encryption_keys"
 
 clearDecryptionKeys context req = do
@@ -47,7 +47,7 @@ createTemporaryKey user password temp_password =
                            Nothing -> Nothing
                            Just p -> Just $ encryptPrivateKey (userId user) temp_password p
 
-getWithDecryptionKey :: Int64 -> CsrfFormApplicationWithEnctyptedKey -> CsrfFormApplication
+getWithDecryptionKey :: Int64 -> CsrfFormApplicationWithEncryptedKey -> CsrfFormApplication
 getWithDecryptionKey rid other csrf context req f = do
   report <- getReport (sessionDbConn context) rid
   report' <- case report of

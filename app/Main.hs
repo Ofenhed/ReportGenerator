@@ -48,7 +48,7 @@ staticDir = "static"
 serverDir = "static/server"
 clientDir = "static/client"
 
-generateReport :: CsrfFormApplicationWithEnctyptedKey
+generateReport :: CsrfFormApplicationWithEncryptedKey
 generateReport id key csrf context req f = do
   encryptionKey <- getUserEncryptionKeyFor (sessionDbConn context) (fromJust $ sessionUser context) id
   rep <- render (sessionDbConn context) encryptionKey id
