@@ -16,7 +16,7 @@ import Database.Resolver
 import Network.Wai (Application, responseLBS, responseFile, requestMethod, pathInfo, Response)
 import Network.Wai.Session (withSession)
 import Data.Default.Class (def)
-import Network.HTTP.Types (status200, status404, status500, hContentType)
+import Network.HTTP.Types (status200, status404, status500)
 import Text.Ginger.GVal (toGVal, GVal(..), ToGVal(..))
 import Text.Ginger (toGVal, VarName, Run, dict)
 import Text.Ginger.Html (Html)

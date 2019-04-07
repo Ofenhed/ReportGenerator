@@ -15,8 +15,9 @@ import Common
 import Csrf
 import Login
 import Encryption
+import Autofill
 
-import Network.Wai (Application, responseLBS, responseFile, requestMethod, pathInfo, Response, Middleware)
+import Network.Wai (Application, responseLBS, responseFile, requestMethod, pathInfo, Response, Middleware, mapResponseHeaders)
 import Network.Wai.Session (withSession)
 import Network.Wai.Session.Map (mapStore_)
 import Network.Wai.Handler.Warp (defaultSettings, setPort, setServerName)
@@ -25,7 +26,7 @@ import Network.WebSockets.Connection (defaultConnectionOptions)
 import Network.Wai.Handler.WarpTLS (runTLS, tlsSettings)
 import Web.Cookie (SetCookie(setCookieSecure, setCookieHttpOnly, setCookiePath))
 import Data.Default.Class
-import Network.HTTP.Types (status200, status404, status500, Status(statusCode))
+import Network.HTTP.Types (status200, status404, status500, Status(statusCode), hServer, hContentType)
 import Data.Maybe (fromJust, fromMaybe)
 import Control.Monad.ST (runST)
 import System.IO (openFile, IOMode(ReadMode), hGetContents)
@@ -52,7 +53,7 @@ generateReport :: CsrfFormApplicationWithEncryptedKey
 generateReport id key csrf context req f = do
   encryptionKey <- getUserEncryptionKeyFor (sessionDbConn context) (fromJust $ sessionUser context) id
   rep <- render (sessionDbConn context) encryptionKey id
-  f $ responseText status200 [(hContentType, "text/html")] rep
+  f $ responseText status200 [] rep
 
 app sess' req f = do
   user <- loggedInUser sess' req
@@ -67,12 +68,14 @@ app sess' req f = do
     -- -- ("GET", ["client", file]) -> f $ responseFile status200 [] (clientDir </> (takeFileName $ Text.unpack file)) Nothing
     -- ("GET", []) -> call indexPage
     ("GET", [], _) -> do t <- runTemplate sess Nothing "index" $ \_ -> return def
-                         f $ responseText status200 [(hContentType, "text/html")] t
+                         f $ responseText status200 [] t
 
     -- Generate report
     ("GET", ["report", "generate", id], Just _) -> let id' = read $ Text.unpack id
                                                      in call $ withCsrf $ getWithDecryptionKey id' $ generateReport
+    ("GET", ["autofill"], Just _) -> call listAutofill
 
+    -- Decrypt a report
     ("POST", ["report", "unlock", id], Just _) -> call $ verifyCsrf $ handleKeyDecryption (read $ Text.unpack id :: Int64)
     -- List and edit reports
     ("GET", ["report"], Just _) -> call $ withCsrf $ listReports
@@ -129,8 +132,16 @@ showErrors context other req f = do
                        _ -> throw err
       result <- try (runTemplate context Nothing "exception" $ \k -> return $ fromMaybe def $ lookup k db) :: IO (Either VisibleError Text.Text)
       case result of
-        Right result' -> f $ responseText status [(hContentType, "text/html")] result'
+        Right result' -> f $ responseText status [] result'
         Left _ -> f $ responseText status500 [] "Something went screwy, and before you knew he was trying to kill everyone."
+
+defaultHeaders :: Middleware
+defaultHeaders app req f = app req $ f . (mapResponseHeaders (\h -> addIfNotExisting (hContentType, "text/html") $ 
+                                                                    addIfNotExisting ("Strict-Transport-Security", "max-age=31536000") h))
+  where
+  addIfNotExisting header@(needle,_) haystack = case lookup needle haystack of
+                                                  Nothing -> header:haystack
+                                                  Just _ -> haystack
 
 main = do
   session <- Vault.newKey
@@ -145,7 +156,8 @@ main = do
                         , sessionSession = session
                         , sessionHasher = hmac
                         , sessionUser = Nothing }
-  runTLS (tlsSettings "new.cert.cert" "new.cert.key") settings $ showErrors context
+  runTLS (tlsSettings "new.cert.cert" "new.cert.key") settings $ defaultHeaders
+                                                               $ showErrors context
                                                                $ withSession store "sess" (def { setCookieHttpOnly = True, setCookieSecure = True, setCookiePath = Just "/" }) session
                                                                $ websocketsOr defaultConnectionOptions sockServer
                                                                $ app context

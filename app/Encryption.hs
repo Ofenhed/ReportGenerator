@@ -38,7 +38,7 @@ queryDecryptionKey report csrf context req f = do
                       "csrf" -> return $ toGVal csrf
                       _ -> return def
   result <- runTemplate context Nothing "unlock_encryption" lookup
-  f $ responseText status200 [(hContentType, "text/html")] result
+  f $ responseText status200 [] result
   
 createTemporaryKey user password temp_password =   
   case userKey user of

@@ -57,6 +57,12 @@
       div.ul-tree ul.ul-tree.variable > li > label::before {
         content: "\01F4DD"
       }
+      .visibility_check:not(:checked) ~ .visibility_target {
+        display: none;
+      }
+      .visibility_check:checked {
+        display: none;
+      }
       div.warning {
         border: 5px solid #a00;
         background: #c00;
@@ -92,7 +98,11 @@
   </head>
   <body>
   {% if user.id %}
-    <div class="header-left"><a href="/template">Templates</a> <a href="/report">Reports</a></div>
+    <div class="header-left">
+      <a href="/template">Templates</a>
+      <a href="/report">Reports</a>
+      <a href="/autofill">Autofill</a>
+    </div>
     <div class="header-right"><a href="/user">{{ user }}</a> <a href="/logout">Log out</a></div>
   {% else %}
     <div class="header-right"><a href="/login">Log in</a></div>

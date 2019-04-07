@@ -50,7 +50,7 @@ showLogin csrf context req f = do
                       "csrf" -> return $ toGVal csrf
                       _ -> return $ def
   login <- runTemplate context Nothing "login" lookup
-  f $ responseText status200 [(hContentType, "text/html")] login
+  f $ responseText status200 [] login
 
 showLogin_ :: CsrfVerifiedApplication
 showLogin_ (params, _) context req f = do
@@ -78,7 +78,7 @@ userPage csrf context req f = do
                       "csrf" -> return $ toGVal csrf
                       _ -> return def
   page <- runTemplate context Nothing "user" lookup
-  f $ responseText status200 [(hContentType, "text/html")] page
+  f $ responseText status200 [] page
 
 userPage_ :: CsrfVerifiedApplication
 userPage_ (params, _) context req f = do

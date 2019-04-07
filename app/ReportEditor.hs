@@ -37,7 +37,7 @@ listReports csrf context req f = do
                       "csrf" -> return $ toGVal csrf
                       _ -> return $ def
   result <- runTemplate context Nothing "list_reports" lookup
-  f $ responseText status200 [(hContentType, "text/html")] result
+  f $ responseText status200 [] result
 
 listReports_ :: CsrfVerifiedApplication
 listReports_ (params, _) context req f = do
@@ -107,7 +107,7 @@ editReport template args id key csrf context req f = do
                                    ["template", sub] -> getTemplateEditor (sessionDbConn context) context' encryptionKey sub True >>= return . (maybe Nothing $ Just . Text.unpack)
                                    _ -> return Nothing
       result <- runTemplate context (Just includer) "edit_report" lookup
-      f $ responseText status200 [(hContentType, "text/html")] result
+      f $ responseText status200 [] result
     
 saveReport :: Int64 -> CsrfVerifiedApplication
 saveReport id (params, files) context req f = do

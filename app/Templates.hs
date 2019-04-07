@@ -25,7 +25,7 @@ listTemplates context req f = do
                       "templates" -> return $ toGVal templates
                       _ -> return def
   result <- runTemplate context Nothing "list_templates" lookup
-  f $ responseText status200 [(hContentType, "text/html")] result
+  f $ responseText status200 [] result
     
 editTemplate :: Int64 -> CsrfFormApplication
 editTemplate id csrf context req f = do
@@ -40,7 +40,7 @@ editTemplate id csrf context req f = do
                           "csrf" -> return $ toGVal csrf
                           _ -> return def
       result <- runTemplate context Nothing "edit_template" lookup
-      f $ responseText status200 [(hContentType, "text/html")] result
+      f $ responseText status200 [] result
     
 editTemplate_ :: Int64 -> CsrfVerifiedApplication
 editTemplate_ id (params, _) context req f = do
@@ -64,7 +64,7 @@ promptDeleteTemplateVariable tid varid csrf context req f = do
                       "template_id" -> return $ toGVal tid
                       _ -> return def
   result <- runTemplate context Nothing "delete_template_var" lookup
-  f $ responseText status200 [(hContentType, "text/html")] result
+  f $ responseText status200 [] result
 
 promptDeleteTemplateVariable_ tid varid _ context req f = do
   Database.Writer.deleteTemplateVariable (sessionDbConn context) varid
@@ -77,7 +77,7 @@ addTemplateVar tid parent new csrf context req f = do
                       ("type", TemplateVarParentVar _) -> return $ toGVal ("val" :: Text.Text)
                       _ -> return def
   result <- runTemplate context Nothing "add_template_variable" lookup
-  f $ responseText status200 [(hContentType, "text/html")] result
+  f $ responseText status200 [] result
 
 addTemplateVar_ tid parent new (params, _) context req f = do
   case (new, lookup "name" params, lookup "value" params) of
