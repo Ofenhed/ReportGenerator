@@ -54,18 +54,19 @@ showLogin csrf context req f = do
 
 showLogin_ :: CsrfVerifiedApplication
 showLogin_ (params, _) context req f = do
-  case (lookup "username" params, lookup "password" params, lookup "temp_password" params) of
-    (Just u, Just p, temp) -> do user <- getUserWithPassword (sessionDbConn context) u p
+  case (lookup "username" params, lookup "password" params, lookup "use_temp_password" params, lookup "temp_password" params) of
+    (Just u, Just p, useTempPassword, temp) ->
+                              do user <- getUserWithPassword (sessionDbConn context) u p
                                  case user of
                                    Just u -> do
                                      let Just (_, sessionInsert) = Vault.lookup (sessionSession context) (vault req)
-                                     priv <- case (userKey u, temp) of
-                                               (Just (_, priv), Nothing) -> return $ Just priv
-                                               (Nothing, Nothing) -> return Nothing
-                                               (Just _, Just tempPass) -> case createTemporaryKey u p tempPass of
+                                     priv <- case (userKey u, useTempPassword, temp) of
+                                               (Just (_, priv), Nothing, _) -> return $ Just priv
+                                               (Nothing, Nothing, _) -> return Nothing
+                                               (Just _, Just _, Just tempPass) -> case createTemporaryKey u p tempPass of
                                                                             Just newKey -> return $ Just newKey
                                                                             Nothing -> throw $ VisibleError "Could not create a new key"
-                                               (Nothing, Just _) -> throw $ VisibleError "You don't have a private key"
+                                               (Nothing, _, Just _) -> throw $ VisibleError "You don't have a private key"
                                      sessionInsert sessionKeyName $ Text.pack $ show (userId u, userPassId u, priv)
                                      redirect "/" req f
                                    Nothing -> redirectSame req f
