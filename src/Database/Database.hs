@@ -41,7 +41,7 @@ instance ToRow FindingField where
 openDatabase = do
   conn <- open "Reports.db"
   execute_ conn "PRAGMA foreign_key=ON;"
-  setTrace conn $ Just $ putStrLn . Text.unpack
+  -- setTrace conn $ Just $ putStrLn . Text.unpack
   setupDatabase conn
   return conn
 

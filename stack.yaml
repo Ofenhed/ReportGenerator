@@ -40,8 +40,10 @@ packages:
 # (e.g., acme-missiles-0.3)
 extra-deps:
 - ginger-0.8.4.0
-- git: git@github.com:channable/alfred-margaret
+- git: https://github.com/channable/alfred-margaret.git
   commit: 6ed78a669c67da6ea0584efbe52e2a06867558f7
+- git: https://github.com/Ofenhed/CVSSv3.git
+  commit: 94216633a1cfde123e666ee0cbe86025cfebf151
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

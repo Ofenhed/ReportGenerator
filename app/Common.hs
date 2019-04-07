@@ -39,6 +39,8 @@ data SessionType = Session { sessionDbConn :: Connection
 
 type WebApplication = SessionType -> Application
 
+type TemplateLookupType p = VarName -> Run p IO Html (GVal (Run p IO Html))
+
 responseText code headers = (responseLBS code $ map (\(x, y) -> (x, Encoding.encodeUtf8 y)) headers) . LazyEncoding.encodeUtf8 . LazyText.fromStrict
 responseTextLazy code headers = (responseLBS code $ map (\(x, y) -> (x, Encoding.encodeUtf8 y)) headers) . LazyEncoding.encodeUtf8
 

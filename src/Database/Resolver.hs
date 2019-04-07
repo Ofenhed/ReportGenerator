@@ -3,6 +3,7 @@ module Database.Resolver where
 
 import Database.Types
 import Database.Encryption
+import Database.Extra
 import Types
 import UserType
 
@@ -17,42 +18,75 @@ import qualified Data.Text            as Text
 import qualified Data.Map             as Map
 import qualified Data.Text.Encoding   as Encoding
 
+import Debug.Trace
+
 data EncryptionException = EncryptionMissmatchException
                          | CouldNotDecryptException deriving Show
 instance Exception EncryptionException
 
 getAllChildVariable :: Connection -> TemplateVarParent -> Int64 -> Maybe EncryptionKey -> IO [(Int64, Maybe Int64, Text.Text, Maybe Text.Text)]
 getAllChildVariable conn template parent key = do
-  let (target, val) = templateParentName template
-  variables <- query conn (Query $ Text.concat ["SELECT TemplateVar.id, ReportVar.id, TemplateVar.name, ReportVar.iv, ReportVar.data, TemplateVar.data FROM TemplateVar LEFT JOIN ReportVar ON ReportVar.template = TemplateVar.id AND ReportVar.parent = ? WHERE TemplateVar.", target, " = ?"]) (parent, val)
-  flip mapM variables $ \(tid, rid, name, iv, rd, td) -> case (key, iv, rd) of
-    (Just key, Just iv, Just rd') -> case decryptData key iv rd' of
-                                       Right dec -> return (tid, rid, name, dec)
-                                       Left _ -> throw CouldNotDecryptException
-    (Just key, Just iv, Nothing) -> return (tid, rid, name, Nothing)
-    (Nothing, Nothing, _) -> case rid of
-                              Just _ -> return (tid, rid, name, rd)
-                              Nothing -> return (tid, rid, name, td)
-    (Just _, Nothing, Nothing) -> return (tid, rid, name, td)
-    _ -> throw EncryptionMissmatchException
+  getFetcher <- prepareGetAllChildVariable conn key
+  getFetcher $ \fetcher -> fetcher template parent
+
+prepareGetAllChildVariable :: Connection -> Maybe EncryptionKey -> IO (((TemplateVarParent -> Int64 -> IO [(Int64, Maybe Int64, Text.Text, Maybe Text.Text)]) -> IO a) -> IO a)
+prepareGetAllChildVariable conn key = do
+  let statement' = openStatement conn "SELECT TemplateVar.id, ReportVar.id, TemplateVar.name, ReportVar.iv, ReportVar.data, TemplateVar.data \
+                                         \FROM TemplateVar \
+                                         \LEFT JOIN ReportVar \
+                                           \ON ReportVar.template = TemplateVar.id AND ReportVar.parent = :parent \
+                                         \WHERE CASE :target \
+                                                  \WHEN 'template' THEN TemplateVar.template = :template \
+                                                  \WHEN 'templateVar' THEN TemplateVar.templateVar = :template \
+                                                  \WHEN 'templateVars' THEN TemplateVar.templateVars = :template \
+                                                  \END"
+      bracketeer statement template parent = do
+        let (target, val) = templateParentName template :: (Text.Text, Int64)
+        withBindNamed statement [":parent" := parent, ":target" := target, ":template" := val] $
+          flip (handleRows statement) [] $ \(tid, rid, name, iv, rd, td) ->
+                                              case (key, iv, rd) of
+                                                (Just key, Just iv, Just rd') -> case decryptData key iv rd' of
+                                                                                   Right dec -> return (tid, rid, name, dec)
+                                                                                   Left _ -> throw CouldNotDecryptException
+                                                (Just key, Just iv, Nothing) -> return (tid, rid, name, Nothing)
+                                                (Nothing, Nothing, _) -> case rid of
+                                                                           Just _ -> return (tid, rid, name, rd)
+                                                                           Nothing -> return (tid, rid, name, td)
+                                                (Just _, Nothing, Nothing) -> return (tid, rid, name, td)
+                                                _ -> throw EncryptionMissmatchException
+  return $ \func -> bracket statement' closeStatement $ \statement -> func $ bracketeer statement
+
 
 getAllChildVariables :: Connection -> TemplateVarParent -> Int64 -> Maybe EncryptionKey -> IO [(Int64, Text.Text, [(Int64, Maybe Text.Text)])]
 getAllChildVariables conn template parent key = do
-  let (target, val) = case template of
-                        TemplateVarParent i -> ("template", i)
-                        TemplateVarParentVar i -> ("templateVar", i)
-                        TemplateVarParentVars i -> ("templateVars", i)
-  vars <- query conn (Query $ Text.concat ["SELECT TemplateVars.id, TemplateVars.name FROM TemplateVars WHERE ", target, " = ?"]) (Only val)
-  flip mapM vars $ \(tId, tName) -> do
-    values <- query conn "SELECT id, data, iv FROM ReportVars WHERE parent = ? AND template = ? ORDER BY weight ASC" (parent, tId)
-    values' <- flip mapM values $ \(id, d, iv) -> case (key, iv, d) of
-                 (Just key, Just iv, Just d') -> case decryptData key iv d' of
-                                          Right dec -> return (id, dec)
-                                          Left _ -> throw CouldNotDecryptException
-                 (Just key, Just iv, Nothing) -> return (id, d)
-                 (Nothing, Nothing, _) -> return (id, d)
-                 _ -> throw EncryptionMissmatchException
-    return $ (tId, tName, values')
+  getFetcher <- prepareGetAllChildVariables conn key
+  getFetcher $ \fetcher -> fetcher template parent
+
+prepareGetAllChildVariables :: Connection -> Maybe EncryptionKey -> IO (((TemplateVarParent -> Int64 -> IO [(Int64, Text.Text, [(Int64, Maybe Text.Text)])]) -> IO a) -> IO a)
+prepareGetAllChildVariables conn key = do
+  let templateStatement' = openStatement conn "SELECT TemplateVars.id, TemplateVars.name FROM TemplateVars \
+                                                 \WHERE CASE :target \
+                                                          \WHEN 'template' THEN TemplateVars.template = :template \
+                                                          \WHEN 'templateVar' THEN TemplateVars.templateVar = :template \
+                                                          \WHEN 'templateVars' THEN TemplateVars.templateVars = :template \
+                                                          \END"
+      reportStatement' = openStatement conn "SELECT id, data, iv FROM ReportVars WHERE parent = ? AND template = ? ORDER BY weight ASC"
+      bracketeer templateStatement reportStatement template parent = do
+        let (target, val) = templateParentName template :: (Text.Text, Int64)
+        withBindNamed templateStatement [":target" := target, ":template" := val] $
+          flip (handleRows templateStatement) [] $ \(tId, tName) -> do
+            values <- withBind reportStatement (parent, tId) $
+              flip (handleRows reportStatement) [] $ \(id, d, iv) ->
+                case (key, iv, d) of
+                  (Just key, Just iv, Just d') -> case decryptData key iv d' of
+                                                    Right dec -> return (id, dec)
+                                                    Left _ -> throw CouldNotDecryptException
+                  (Just key, Just iv, Nothing) -> return (id, d)
+                  (Nothing, Nothing, _) -> return (id, d)
+                  _ -> throw EncryptionMissmatchException
+            return (tId, tName, values)
+  return $ \func -> bracket templateStatement' closeStatement $ \templateStatement ->
+                    bracket reportStatement' closeStatement $ \reportStatement -> func $ bracketeer templateStatement reportStatement
 
 getReportAndVariables :: Connection -> Int64 -> Maybe Int64 -> Maybe EncryptionKey -> IO (Maybe (Report, IOReportContext))
 getReportAndVariables conn reportId tempId encKey = do
@@ -70,22 +104,24 @@ getReportAndVariables conn reportId tempId encKey = do
 
 includeTemplateVariables conn context mapKey template encKey = do
   context' <- readIORef context
-  let findVariablesRecursive from parent path = do
-        var <- getAllChildVariable conn from parent encKey
+  allChildVariableFetcher <- prepareGetAllChildVariable conn encKey
+  let findVariablesRecursive funcs@(getAllChildVariable', _) from parent path = do
+        var <- getAllChildVariable' from parent
         var' <- flip mapM var $ \(tempId, varId, name, d) -> do
             let path' = path ++ [case varId of Just varId' -> IndexVal varId' ; Nothing -> IndexTempVar tempId]
-            otherVar <- case varId of Nothing -> return $ Map.empty ; Just varId' -> findVariablesRecursive (TemplateVarParentVar tempId) varId' path'
+            otherVar <- case varId of Nothing -> return $ Map.empty ; Just varId' -> findVariablesRecursive funcs (TemplateVarParentVar tempId) varId' path'
             return $ (name, ReportVar { reportVarVariables = otherVar, reportVarValue = Just (path', d), reportVarArray = Nothing })
         vars <- getAllChildVariables conn from parent encKey
         vars' <- flip mapM vars $ \(tempId, name, v) -> do
             v' <- flip mapM v $ \(rId, val) -> do
                 let path' = path ++ [IndexArr rId]
-                others <- findVariablesRecursive (TemplateVarParentVars tempId) rId path'
+                others <- findVariablesRecursive funcs (TemplateVarParentVars tempId) rId path'
                 return $ ReportVar { reportVarVariables = others, reportVarValue = Just (path', val), reportVarArray = Nothing }
             return (name, ReportVar { reportVarVariables = Map.empty, reportVarValue = Nothing, reportVarArray = Just (path ++ [IndexTempVars tempId], v') })
         let merged = Map.unionWith (\var vars -> var { reportVarArray = reportVarArray vars }) (Map.fromList var') (Map.fromList vars')
         return merged
-  vars <- findVariablesRecursive (TemplateVarParent template) (reportContextId context') []
+  vars <- allChildVariableFetcher $ \childVariableFetcher ->
+          findVariablesRecursive (childVariableFetcher, ()) (TemplateVarParent template) (reportContextId context') []
   atomicModifyIORef' context $ \c -> (c { reportContextVariable = Map.insert mapKey (ReportVar { reportVarVariables = vars, reportVarValue = Nothing, reportVarArray = Nothing}) (reportContextVariable c) }, ())
 
 getTemplate :: Connection -> IOReportContext -> Maybe EncryptionKey -> Text.Text -> Bool -> IO (Maybe Text.Text)
@@ -114,6 +150,27 @@ getTemplateEditor conn context encKey template included = do
 
 getTemplates :: Connection -> IO [Template]
 getTemplates conn = query_ conn "SELECT * FROM Template" :: IO [Template]
+
+getMainTemplates :: Connection -> IO [Template]
+getMainTemplates conn = query_ conn "SELECT * FROM Template WHERE main_template = 1" :: IO [Template]
+
+getTemplatesWithLists :: Connection -> IO [Template]
+getTemplatesWithLists conn = query_ conn "WITH RECURSIVE \
+                                            \has_arrays(ptemp, pvar, temp, has_vars) AS \
+                                            \(SELECT Template.id, TemplateVar.id, Template.id, TemplateVars.id IS NOT NULL \
+                                                \FROM Template \
+                                                \LEFT JOIN TemplateVars \
+                                                  \ON TemplateVars.template = Template.id \
+                                                \LEFT JOIN TemplateVar \
+                                                  \ON (TemplateVars.id IS NULL AND TemplateVar.template = Template.id) \
+                                             \UNION SELECT NULL, TemplateVar.id, has_arrays.temp, TemplateVars.id IS NOT NULL \
+                                                \FROM has_arrays \
+                                                \LEFT JOIN TemplateVar \
+                                                  \ON (has_arrays.has_vars = False AND (TemplateVar.template = has_arrays.ptemp OR TemplateVar.templateVar = has_arrays.pvar)) \
+                                                \LEFT JOIN TemplateVars \
+                                                  \ON (has_arrays.has_vars = False AND TemplateVars.templateVar = has_arrays.pvar)) \
+                                          \SELECT Template.* FROM has_arrays, Template \
+                                            \WHERE has_arrays.has_vars = True AND Template.id = has_arrays.temp GROUP BY has_arrays.temp;"
 
 type TemplateVarTree = ([TemplateVars], [TemplateVar])
 data TemplateVars = TemplateVars { templateVarsId :: Int64

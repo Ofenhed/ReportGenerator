@@ -39,6 +39,9 @@
   <textarea name="source">{{ template.source }}</textarea><br>
   <label for="editor">Editor</label><br>
   <textarea name="editor">{{ template.editor }}</textarea><br>
+  <input type="checkbox" name="main_template" {{ template.includable == 0 ? "" : "checked=\"checked\"" }} value="1">
+  <input type="hidden" name="main_template" value="0">
+  <label for="includable">Main template</label><br>
   <input type="checkbox" name="includable" {{ template.includable == 0 ? "" : "checked=\"checked\"" }} value="1">
   <input type="hidden" name="includable" value="0">
   <label for="includable">Includable</label><br>

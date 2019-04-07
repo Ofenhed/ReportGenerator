@@ -27,7 +27,8 @@ data Template = Template { templateId :: Int64
                          , templateDescription :: Maybe Text.Text
                          , templateSource :: Text.Text
                          , templateEditor :: Text.Text
-                         , templateIncludable :: Int } deriving Show
+                         , templateIncludable :: Int
+                         , templateMain :: Int } deriving Show
 
 data Report = Report { reportId :: Int64,
                        reportName :: Text.Text,
@@ -35,10 +36,10 @@ data Report = Report { reportId :: Int64,
                        reportTemplate :: Template } deriving Show
 
 instance FromRow Template where
-  fromRow = Template <$> field <*> field <*> field <*> field <*> field <*> field <*> field
+  fromRow = Template <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
 
 instance FromRow Report where
-  fromRow = Report <$> field <*> field <*> field <*> (Template <$> field <*> field <*> field <*> field <*> field <*> field <*> field)
+  fromRow = Report <$> field <*> field <*> field <*> (Template <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field)
 
 data User = User { userId :: Int64
                  , userUsername :: Text.Text
@@ -47,9 +48,11 @@ data User = User { userId :: Int64
 
 setupDatabase conn = withTransaction conn $ do
     execute_ conn "CREATE TABLE IF NOT EXISTS SettingEscrowAccount (id INTEGER PRIMARY KEY, user INTEGER NOT NULL, FOREIGN KEY (user) REFERENCES user(id) ON DELETE CASCADE, CONSTRAINT only_one_escrow CHECK (id = 1));"
+    execute_ conn "CREATE TABLE IF NOT EXISTS DatabaseVersion (id INTEGER PRIMARY KEY, version INTEGER NOT NULL, CONSTRAINT only_one_escrow CHECK (id = 1));"
+    execute_ conn "INSERT INTO DatabaseVersion (version) VALUES (1);"
     execute_ conn "CREATE TABLE IF NOT EXISTS User (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL, passhash TEXT NOT NULL, salt TEXT NOT NULL, passid INTEGER NOT NULL DEFAULT 0, publicKey TEXT, privateKey TEXT, CONSTRAINT full_set_of_keys CHECK ((publicKey IS NULL AND privateKey IS NULL) OR (publicKey IS NOT NULL AND privateKey IS NOT NULL)), CONSTRAINT unique_username UNIQUE (username));"
     execute_ conn "CREATE TRIGGER IF NOT EXISTS user_pass_counter AFTER UPDATE ON User WHEN OLD.passhash != NEW.passhash BEGIN UPDATE User SET passid = OLD.passid + 1 WHERE id = NEW.id; END;"
-    execute_ conn "CREATE TABLE IF NOT EXISTS Template (id INTEGER PRIMARY KEY AUTOINCREMENT, includeName TEXT NOT NULL, longName TEXT NULL, description TEXT NULL, source TEXT NOT NULL, editor TEXT NOT NULL, includable INTEGER NOT NULL, CONSTRAINT unique_name UNIQUE (includeName));"
+    execute_ conn "CREATE TABLE IF NOT EXISTS Template (id INTEGER PRIMARY KEY AUTOINCREMENT, includeName TEXT NOT NULL, longName TEXT NULL, description TEXT NULL, source TEXT NOT NULL, editor TEXT NOT NULL, includable INTEGER NOT NULL DEFAULT 0, main_template INTEGER NOT NULL DEFAULT 0, CONSTRAINT unique_name UNIQUE (includeName));"
     let templateVarRelation = "FOREIGN KEY (template) REFERENCES Template(id), FOREIGN KEY (templateVar) REFERENCES TemplateVar(id), FOREIGN KEY (templateVars) REFERENCES TemplateVars(id) \
                              \, CONSTRAINT one_parent CHECK (((template, templateVars) IS (NULL, NULL) AND templateVar IS NOT NULL) OR \
                                                            \((template, templateVar) IS (NULL, NULL) AND templateVars IS NOT NULL) OR \
@@ -59,6 +62,10 @@ setupDatabase conn = withTransaction conn $ do
                              \, CONSTRAINT unique_name_template_vars UNIQUE (templateVars, name)"
     execute_ conn $ Query $ Text.concat ["CREATE TABLE IF NOT EXISTS TemplateVar (id INTEGER PRIMARY KEY AUTOINCREMENT, template INTEGER NULL, templateVar INTEGER NULL, templateVars INTEGER NULL, name TEXT NOT NULL, description TEXT, data TEXT NULL, ", templateVarRelation, ");"]
     execute_ conn $ Query $ Text.concat ["CREATE TABLE IF NOT EXISTS TemplateVars (id INTEGER PRIMARY KEY AUTOINCREMENT, template INTEGER NULL, templateVar INTEGER NULL, templateVars INTEGER NULL, name TEXT NOT NULL, description TEXT, ", templateVarRelation, ");"]
+
+    execute_ conn "CREATE TABLE IF NOT EXISTS SavedVar (id INTEGER PRIMARY KEY, templateVars INTEGER NOT NULL, name TEXT NOT NULL, description TEXT NULL, FOREIGN KEY (templateVars) REFERENCES TemplateVars(id));"
+    execute_ conn "CREATE TABLE IF NOT EXISTS SavedTemplateVar (id INTEGER PRIMARY KEY AUTOINCREMENT, savedVar INTEGER NOT NULL, templateVar INTEGER NOT NULL, data TEXT NOT NULL, FOREIGN KEY (templateVar) REFERENCES TemplateVar(id), FOREIGN KEY (savedVar) REFERENCES SavedVar(id));"
+
     execute_ conn "CREATE TABLE IF NOT EXISTS Report (id INTEGER PRIMARY KEY AUTOINCREMENT, template INTEGER NOT NULL, name TEXT NOT NULL, owner INTEGER NOT NULL, FOREIGN KEY (template) REFERENCES TemplateVar(id), FOREIGN KEY (owner) REFERENCES User(id));"
     execute_ conn "CREATE TABLE IF NOT EXISTS ReportVar (id INTEGER PRIMARY KEY AUTOINCREMENT, template INTEGER NOT NULL, parent INTEGER NOT NULL, data TEXT NULL, iv TEXT NULL, FOREIGN KEY (template) REFERENCES TemplateVar(id), CONSTRAINT no_arrays UNIQUE (template, parent));"
     execute_ conn "CREATE TABLE IF NOT EXISTS ReportVars (id INTEGER PRIMARY KEY AUTOINCREMENT, template INTEGER NOT NULL, parent INTEGER NOT NULL, data TEXT NULL, iv TEXT NULL, weight INTEGER NULL, FOREIGN KEY (template) REFERENCES TemplateVars(id), FOREIGN KEY (parent) REFERENCES ReportVar(id), CONSTRAINT sorted_list UNIQUE (template, parent, weight));"
@@ -72,7 +79,7 @@ setupDatabase conn = withTransaction conn $ do
 
     -- Test data
 
-    execute conn "INSERT INTO Template (includeName, source, includable, editor) VALUES ('pentest', ?, 0, ?);" (Encoding.decodeUtf8 $(embedFile "temp/default_report.txt"), Encoding.decodeUtf8 $(embedFile "temp/pentest_editor.txt"))
+    execute conn "INSERT INTO Template (includeName, source, includable, editor, main_template) VALUES ('pentest', ?, 0, ?, 1);" (Encoding.decodeUtf8 $(embedFile "temp/default_report.txt"), Encoding.decodeUtf8 $(embedFile "temp/pentest_editor.txt"))
     tempId <- lastInsertRowId conn
     execute conn "INSERT INTO Template (includeName, source, includable, editor) VALUES ('nmap_results', ?, 1, ?);" (Encoding.decodeUtf8 $(embedFile "temp/nmap_parser.txt"), Encoding.decodeUtf8 $(embedFile "temp/nmap_editor.txt"))
     execute conn "INSERT INTO Template (includeName, source, includable, editor) VALUES ('exec_summary', ?, 1, ?);" (Text.pack "{{ heading(1, 'Executive Summary') }} This is the executive summary. Stuff was {{template.exec_summary.summary}}. {{template.exec_summary.summary.explained}}", Text.pack "{% if report.templateIncludeName == 'exec_summary' %}{{ make_text(variables.exec_summary.children.summary) }}{% else %}<a href='/report/sub/{{report.templateId}}/2/'>Exec Summary</a> {{variables.exec_summary.children.summary.val}}{%endif%}")

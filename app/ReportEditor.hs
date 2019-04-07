@@ -29,8 +29,8 @@ import Safe (headMay)
 listReports :: CsrfFormApplication
 listReports csrf context req f = do
   reports <- getReports (sessionDbConn context)
-  templates <- getTemplates (sessionDbConn context)
-  let lookup :: VarName -> Run p IO Html (GVal (Run p IO Html))
+  templates <- getMainTemplates (sessionDbConn context)
+  let lookup :: TemplateLookupType p
       lookup name = case name of
                       "reports" -> return $ toGVal reports
                       "templates" -> return $ toGVal templates
@@ -84,7 +84,7 @@ editReport template args id key csrf context req f = do
   case reportAndVars of
     Nothing -> throw $ VisibleErrorWithStatus status404 "Could not find report"
     Just (report, context') -> do
-      let lookup :: VarName -> Run p IO Html (GVal (Run p IO Html))
+      let lookup :: TemplateLookupType p
           lookup name = case name of
                           "report" -> return $ toGVal report
                           "variables" -> liftRun $ readIORef context' >>= return . toGVal . (Map.map IndexedReportVar) . reportContextVariable

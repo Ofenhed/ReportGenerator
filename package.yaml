@@ -23,6 +23,10 @@ flags:
     description: Compile with much faster text search. Requires llvm >= 6.
     manual: True
     default: True
+  Optimized:
+    description: Optimize the output
+    manual: True
+    default: True
 
 dependencies:
 - base16-bytestring
@@ -32,6 +36,7 @@ dependencies:
 - containers
 - cookie
 - cryptonite
+- Cvss3
 - data-default
 - data-default-class
 - deepseq
@@ -44,6 +49,7 @@ dependencies:
 - mtl
 - random
 - safe
+- scientific
 - sqlite-simple
 - template-haskell
 - text
@@ -63,6 +69,9 @@ library:
   source-dirs:
     - src/
   when:
+    - condition: flag(Optimized)
+      ghc-options:
+        - -O2
     - condition: flag(llvm)
       then:
         dependencies:
@@ -77,10 +86,14 @@ executables:
   ReportGenerator-exe:
     main:                Main.hs
     source-dirs:         app
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
+    when:
+      - condition: flag(Optimized)
+        ghc-options:
+        - -threaded
+        - -O2
+        - -rtsopts
+        - -with-rtsopts=-N
+
     dependencies:
     - ReportGenerator
 

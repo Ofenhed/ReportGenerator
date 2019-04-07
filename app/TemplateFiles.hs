@@ -7,6 +7,7 @@ module TemplateFiles (runTemplate) where
 import Types
 import Database.Types
 import Common
+import GingerExtra
 
 import System.IO (openBinaryFile, IOMode(ReadMode), hGetContents)
 import Data.FileEmbed (embedDir)
@@ -21,7 +22,7 @@ import Data.Default.Class (def)
 import Control.Monad.Writer (execWriter, tell)
 import Text.Ginger.Html (htmlSource)
 import Data.Maybe (maybe, isNothing)
-import Text.Ginger.GVal (ToGVal(..))
+import Text.Ginger.GVal (ToGVal(..), fromFunction)
 import System.FilePath ((</>), (<.>), normalise)
 
 import qualified Data.DList                     as D
@@ -49,7 +50,7 @@ cachedReadFile filename = let filename' = normalise filename
                                                                Nothing -> return Nothing
                                                         else return Nothing
 
-runTemplate context fetcher filename lookup = do
+runTemplate context fetcher filename lookupFunc = do
   content <- cachedReadFile filename
   case content of
     Nothing -> throw $ VisibleError $ Text.pack $ "Template " ++ filename ++ " does not exist"
@@ -62,7 +63,9 @@ runTemplate context fetcher filename lookup = do
           let lookup' name = case name of
                           "user" -> return $ toGVal $ sessionUser context
                           "None" -> return $ toGVal $ (Nothing :: Maybe Int)
-                          _ -> lookup name
+                          _ -> case lookup name gingerFunctions of
+                                 Just v -> return $ fromFunction v
+                                 Nothing -> lookupFunc name
               context' = makeContextHtmlM lookup' (\n -> atomicModifyIORef' vec (\state -> (D.snoc state n, ())))
           result <- runGingerT context' parsed'
           case result of
