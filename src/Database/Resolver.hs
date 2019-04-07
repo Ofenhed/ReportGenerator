@@ -105,13 +105,14 @@ getReportAndVariables conn reportId tempId encKey = do
 includeTemplateVariables conn context mapKey template encKey = do
   context' <- readIORef context
   allChildVariableFetcher <- prepareGetAllChildVariable conn encKey
-  let findVariablesRecursive funcs@(getAllChildVariable', _) from parent path = do
+  allChildVariablesFetcher <- prepareGetAllChildVariables conn encKey
+  let findVariablesRecursive funcs@(getAllChildVariable', getAllChildVariables') from parent path = do
         var <- getAllChildVariable' from parent
         var' <- flip mapM var $ \(tempId, varId, name, d) -> do
             let path' = path ++ [case varId of Just varId' -> IndexVal varId' ; Nothing -> IndexTempVar tempId]
             otherVar <- case varId of Nothing -> return $ Map.empty ; Just varId' -> findVariablesRecursive funcs (TemplateVarParentVar tempId) varId' path'
             return $ (name, ReportVar { reportVarVariables = otherVar, reportVarValue = Just (path', d), reportVarArray = Nothing })
-        vars <- getAllChildVariables conn from parent encKey
+        vars <- getAllChildVariables' from parent
         vars' <- flip mapM vars $ \(tempId, name, v) -> do
             v' <- flip mapM v $ \(rId, val) -> do
                 let path' = path ++ [IndexArr rId]
@@ -121,7 +122,8 @@ includeTemplateVariables conn context mapKey template encKey = do
         let merged = Map.unionWith (\var vars -> var { reportVarArray = reportVarArray vars }) (Map.fromList var') (Map.fromList vars')
         return merged
   vars <- allChildVariableFetcher $ \childVariableFetcher ->
-          findVariablesRecursive (childVariableFetcher, ()) (TemplateVarParent template) (reportContextId context') []
+          allChildVariablesFetcher $ \childVariablesFetcher ->
+          findVariablesRecursive (childVariableFetcher, childVariablesFetcher) (TemplateVarParent template) (reportContextId context') []
   atomicModifyIORef' context $ \c -> (c { reportContextVariable = Map.insert mapKey (ReportVar { reportVarVariables = vars, reportVarValue = Nothing, reportVarArray = Nothing}) (reportContextVariable c) }, ())
 
 getTemplate :: Connection -> IOReportContext -> Maybe EncryptionKey -> Text.Text -> Bool -> IO (Maybe Text.Text)
