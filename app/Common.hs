@@ -44,11 +44,6 @@ type TemplateLookupType p = VarName -> Run p IO Html (GVal (Run p IO Html))
 responseText code headers = (responseLBS code $ map (\(x, y) -> (x, Encoding.encodeUtf8 y)) headers) . LazyEncoding.encodeUtf8 . LazyText.fromStrict
 responseTextLazy code headers = (responseLBS code $ map (\(x, y) -> (x, Encoding.encodeUtf8 y)) headers) . LazyEncoding.encodeUtf8
 
-instance ToGVal m (Map.Map Text.Text (GVal m)) where
-  toGVal xs = def { asLookup = Just $ flip Map.lookup xs
-                  , isNull = Map.null xs
-                  }
-
 instance ToGVal m Template where
   toGVal t = dict $ [("id", toGVal $ templateId t)
                     ,("includeName", toGVal $ templateIncludeName t)
@@ -60,13 +55,13 @@ instance ToGVal m Template where
 
 instance ToGVal m TemplateVars where
   toGVal t = dict $ [("id", toGVal $ templateVarsId t)
-                    ,("type", toGVal $ "arr")
+                    ,("type", toGVal $ Text.pack "arr")
                     ,("name", toGVal $ templateVarsName t)
                     ,("description", toGVal $ templateVarsDescription t)
                     ,("children", toGVal $ templateVarsChildren t)]
 instance ToGVal m TemplateVar where
   toGVal t = dict $ [("id", toGVal $ templateVarId t)
-                    ,("type", toGVal $ "var")
+                    ,("type", toGVal $ Text.pack "var")
                     ,("name", toGVal $ templateVarName t)
                     ,("description", toGVal $ templateVarDescription t)
                     ,("default", toGVal $ templateVarDefault t)

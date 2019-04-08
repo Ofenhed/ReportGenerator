@@ -75,7 +75,9 @@ instance ToGVal m ReportVar where
                   }
 
 instance ToGVal m a => ToGVal m (Map.Map Text.Text a) where
-  toGVal xs = def { asLookup = Just $ flip Map.lookup $ Map.map toGVal xs
+  toGVal xs = def { asLookup = Just $ \x -> case Map.lookup x xs of
+                                              Just res -> Just $ toGVal res
+                                              Nothing -> Nothing
                   , isNull = Map.null xs
                   }
 
