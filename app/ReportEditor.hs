@@ -16,15 +16,17 @@ import Encryption
 
 import Text.Ginger.GVal (toGVal, ToGVal(..), dict, fromFunction)
 import Text.Ginger.Run (liftRun, runtimeErrorMessage)
-import Data.IORef (newIORef, readIORef, atomicModifyIORef')
+import Data.IORef (newIORef, readIORef, atomicModifyIORef', atomicWriteIORef, IORef())
 import System.FilePath (isPathSeparator, normalise)
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Encoding
-import Data.Maybe (isJust, maybe, fromJust)
+import Data.Maybe (isJust, maybe, fromJust, mapMaybe)
 import qualified Data.ByteString.Lazy.Char8 as LC8
 import qualified Data.ByteString.Char8      as C8
 import Safe (headMay)
+
+import Debug.Trace
 
 listReports :: CsrfFormApplication
 listReports csrf context req f = do
@@ -78,20 +80,41 @@ editReport template args id key csrf context req f = do
   encryptionKey <- getUserEncryptionKeyFor (sessionDbConn context) (fromJust $ sessionUser context) id
   reportAndVars <- getReportAndVariables (sessionDbConn context) id template encryptionKey
   toSaveMvar <- newIORef $ DataFieldBuilder { fieldCheckbox = [], fieldValue = [], fieldFile = [] }
-  let (rpc, args') = case args of
+  let getSavedVars context' = do
+        cachedSavedVars <- newIORef (Nothing, def :: GVal (Run p IO Html))
+        return $ do
+          reportVars <- liftRun $ readIORef context'
+          (cachedReportVars, savedVars) <- liftRun $ readIORef cachedSavedVars
+          let reportVars' = reportContextVariable reportVars
+          if Just reportVars' == cachedReportVars
+            then return savedVars
+            else do
+              let recursiveFindArrs var = let children = concat $ map recursiveFindArrs $ Map.elems $ reportVarVariables var
+                                            in case reportVarArray var of
+                                                                     Just (idx, vars) -> idx:((concat $ map recursiveFindArrs vars) ++ children)
+                                                                     Nothing -> children
+                  arrs = Map.map recursiveFindArrs reportVars'
+              saved <- liftRun $ flip mapM arrs $ mapM $ \idx -> case last $ traceShowId idx of
+                                                  IndexTempVars i -> getSavedTemplateVars (sessionDbConn context) i Nothing >>= \saved -> return $ Just (Text.pack $ show $ idx, saved)
+                                                  _ -> return Nothing
+              let saved' = toGVal $ Map.map (Map.fromList . mapMaybe Prelude.id) saved
+              liftRun $ atomicWriteIORef cachedSavedVars $ (Just reportVars', saved')
+              return $ traceShowId saved'
+      (rpc, args') = case args of
                        "rpc":a -> (True, a)
                        a -> (False, a)
   case reportAndVars of
     Nothing -> throw $ VisibleErrorWithStatus status404 "Could not find report"
     Just (report, context') -> do
-      let lookup :: TemplateLookupType p
-          lookup name = case name of
+      let lookup :: (Run p IO Html (GVal (Run p IO Html))) -> VarName -> Run p IO Html (GVal (Run p IO Html))
+          lookup savedVarsFetcher name = case name of
                           "report" -> return $ toGVal report
                           "variables" -> liftRun $ readIORef context' >>= return . toGVal . (Map.map IndexedReportVar) . reportContextVariable
                           "custom_variables" -> return $ toGVal [("image_1", "no")]
                           "csrf" -> return $ toGVal csrf
                           "args" -> return $ toGVal args'
                           "rpc" -> return $ toGVal rpc
+                          "saved_vars" -> savedVarsFetcher
                           -- "delete_template_var" -> \vars -> case vars of
                           --                                     ["delete_id", var] -> do
                           --                                       let var' = read $ asText var :: IndexPathType
@@ -106,7 +129,8 @@ editReport template args id key csrf context req f = do
                                    ["template_curr"] -> return $ Just $ Text.unpack $ templateEditor $ reportTemplate report
                                    ["template", sub] -> getTemplateEditor (sessionDbConn context) context' encryptionKey sub True >>= return . (maybe Nothing $ Just . Text.unpack)
                                    _ -> return Nothing
-      result <- runTemplate context (Just includer) "edit_report" lookup
+      savedVarsFetcher <- getSavedVars context'
+      result <- runTemplate context (Just includer) "edit_report" $ lookup savedVarsFetcher
       f $ responseText status200 [] result
     
 saveReport :: Int64 -> CsrfVerifiedApplication

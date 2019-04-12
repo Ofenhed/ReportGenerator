@@ -74,6 +74,11 @@ app sess' req f = do
     ("GET", ["report", "generate", id], Just _) -> let id' = read $ Text.unpack id
                                                      in call $ withCsrf $ getWithDecryptionKey id' $ generateReport
     ("GET", ["autofill"], Just _) -> call listAutofill
+    ("GET", ["autofills", id], Just _) -> call $ withCsrf $ listAutofillFor $ read $ Text.unpack id
+    ("GET", ["autofill", id], Just _) -> call $ withCsrf $ editAutofill (read $ Text.unpack id) Nothing
+    ("GET", ["autofill", id, id2], Just _) -> call $ withCsrf $ editAutofill (read $ Text.unpack id) (Just $ read $ Text.unpack id2)
+    ("POST", ["autofill", id], Just _) -> call $ verifyCsrf $ editAutofill_ (read $ Text.unpack id) Nothing
+    ("POST", ["autofill", id, id2], Just _) -> call $ verifyCsrf $ editAutofill_ (read $ Text.unpack id) (Just $ read $ Text.unpack id2)
 
     -- Decrypt a report
     ("POST", ["report", "unlock", id], Just _) -> call $ verifyCsrf $ handleKeyDecryption (read $ Text.unpack id :: Int64)

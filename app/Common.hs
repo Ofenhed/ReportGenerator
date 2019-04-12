@@ -55,13 +55,13 @@ instance ToGVal m Template where
 
 instance ToGVal m TemplateVars where
   toGVal t = dict $ [("id", toGVal $ templateVarsId t)
-                    ,("type", toGVal $ Text.pack "arr")
+                    ,("type", toGVal ("arr" :: Text.Text))
                     ,("name", toGVal $ templateVarsName t)
                     ,("description", toGVal $ templateVarsDescription t)
                     ,("children", toGVal $ templateVarsChildren t)]
 instance ToGVal m TemplateVar where
   toGVal t = dict $ [("id", toGVal $ templateVarId t)
-                    ,("type", toGVal $ Text.pack "var")
+                    ,("type", toGVal ("var" :: Text.Text))
                     ,("name", toGVal $ templateVarName t)
                     ,("description", toGVal $ templateVarDescription t)
                     ,("default", toGVal $ templateVarDefault t)
@@ -75,4 +75,15 @@ instance ToGVal m Report where
                     ,("templateLongName", toGVal $ templateLongName $ reportTemplate t)
                     ,("editor", toGVal $ templateEditor $ reportTemplate t)
                     ,("encrypted", toGVal $ reportEncrypted t)]
+
+instance ToGVal m SavedVars where
+  toGVal xs = gvalMap [("id", toGVal $ savedVarsId xs)
+                      ,("name", toGVal $ savedVarsName xs)
+                      ,("description", toGVal $ savedVarsDescription xs)
+                      ,("data", toGVal $ savedVarsData xs)
+                      ,("var", gvalMap $ flip map (Map.toList $ savedVarsVar xs) $
+                                                  \(template, (id, d)) ->
+                                                   (Text.pack $ show template
+                                                   ,gvalMap [("id", toGVal id)
+                                                            ,("value", toGVal d)]))]
 
