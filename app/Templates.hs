@@ -55,7 +55,10 @@ editTemplate_ id (params, _) context req f = do
                                                           Nothing -> templateSource t
                                      , templateEditor = case lookup "editor" params of
                                                           Just s -> s
-                                                          Nothing -> templateEditor t }, True)
+                                                          Nothing -> templateEditor t
+                                     , templateLongName = case lookup "template_name" params of
+                                                            s@(Just _) -> s
+                                                            Nothing -> templateLongName t }, True)
   redirectSame req f
 
 promptDeleteTemplateVariable tid varid csrf context req f = do
