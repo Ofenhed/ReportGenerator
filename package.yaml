@@ -53,6 +53,7 @@ dependencies:
 - sqlite-simple
 - template-haskell
 - text
+- time
 - transformers
 - vault
 - vector
@@ -64,6 +65,7 @@ dependencies:
 - warp-tls
 - websockets
 - xml-conduit
+- zlib
 
 library:
   source-dirs:
