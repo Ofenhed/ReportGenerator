@@ -15,12 +15,15 @@ import Crypto.Error (CryptoFailable(CryptoPassed))
 import System.Random (randomIO)
 import Data.Int (Int64)
 
-import qualified Crypto.PubKey.RSA.OAEP   as OAEP
-import qualified Data.ByteString.Base64   as B64
-import qualified Data.Text                as Text
-import qualified Data.Text.Encoding       as Encoding
-import qualified Data.ByteArray           as BA
-import qualified Data.ByteString.Char8    as C8
+import qualified Codec.Compression.GZip     as GZ
+import qualified Crypto.PubKey.RSA.OAEP     as OAEP
+import qualified Data.ByteString.Base64     as B64
+import qualified Data.Text                  as Text
+import qualified Data.Text.Encoding         as Encoding
+import qualified Data.ByteArray             as BA
+import qualified Data.ByteString.Char8      as C8
+import qualified Data.ByteString.Lazy.Char8 as LC8
+
 
 import Debug.Trace
 
@@ -35,7 +38,7 @@ decryptData_ key iv d = let KeySizeFixed keySize = cipherKeySize (undefined :: E
                             CryptoPassed firstCiph = cipherInit firstKey :: CryptoFailable EncryptionType
                           in case unpad (PKCS7 $ blockSize firstCiph) $ cbcDecrypt firstCiph iv $ B64.decodeLenient $ Encoding.encodeUtf8 d of
                                Nothing -> Nothing
-                               Just k -> case reads $ C8.unpack k of
+                               Just k -> case reads $ LC8.unpack $ GZ.decompress $ LC8.fromStrict k of
                                            [(k', [])] -> Just k'
                                            _ -> Nothing
 
@@ -43,7 +46,7 @@ encryptData_ :: (Show a, BA.ByteArrayAccess b) => b -> IV EncryptionType -> a ->
 encryptData_ key iv d = let KeySizeFixed keySize = cipherKeySize (undefined :: EncryptionType)
                             (firstKey, rest) = BA.splitAt keySize $ BA.convert key :: (BA.Bytes, BA.Bytes)
                             CryptoPassed firstCiph = cipherInit firstKey :: CryptoFailable EncryptionType
-                          in Encoding.decodeLatin1 $ B64.encode $ cbcEncrypt firstCiph iv $ pad (PKCS7 $ blockSize firstCiph) $ Encoding.encodeUtf8 $ Text.pack $ show d
+                          in Encoding.decodeLatin1 $ B64.encode $ cbcEncrypt firstCiph iv $ pad (PKCS7 $ blockSize firstCiph) $ LC8.toStrict $ GZ.compress $ LC8.fromStrict $ Encoding.encodeUtf8 $ Text.pack $ show d
 
 decryptData :: Read a => EncryptionKey -> EncryptionIv -> Text.Text -> Either Text.Text a
 decryptData key iv d = case makeIV $ B64.decodeLenient $ C8.pack $ Text.unpack iv of
