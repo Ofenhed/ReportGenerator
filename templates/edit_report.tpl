@@ -1,3 +1,4 @@
+{% set title = "Edit report - %s"|format(report.name) %}
 {% macro make_text(var) %}
   <input type="text" name="{{ add_value(var.idx) }}" value="{{ var.val }}">
 {% endmacro %}
@@ -20,7 +21,6 @@
   {{ eval(src=report.editor, context={"variables": variables, "report": report, "make_text": make_text, "make_textarea": make_textarea, "add_checkbox": add_checkbox, "add_file": add_file, "add_value": add_value, "args": args, "rpc": rpc, "csrf": csrf, "add_list_button": add_list_button, "remove_list_button": remove_list_button}) }}
 {%- endmacro %}
 {% if rpc == 0 %}
-  {% set title = "test<script>" %}
   {% include "default" %}
   {% if report.encrypted %}{% else %}
     <div class="warning">THIS REPORT IS NOT ENCRYPTED. DO NOT ADD SENSITIVE DATA TO IT!</div>

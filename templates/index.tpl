@@ -1,4 +1,4 @@
-{% set title = "Nixu report editor" %}
+{% set title = "Report editor" %}
 {% include "default" %}
 Welcome
 {{ endTemplate() }}

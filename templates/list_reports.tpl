@@ -1,5 +1,6 @@
-{% set title = "test<script>" %}
+{% set title = "Reports" %}
 {% include "default" %}
+<h1>Reports</h1>
 <table>
 <tbody>
 {% for t in reports %}
@@ -7,6 +8,7 @@
 {% endfor %}
 </tbody>
 </table>
+<h2>Create new report</h2>
 <form method="POST">
   <input type="text" name="name">
   <select name="template">
