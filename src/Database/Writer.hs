@@ -19,6 +19,8 @@ import System.Random (randomRIO)
 import qualified Data.Text as Text
 import qualified Data.Map as Map
 
+import Debug.Trace
+
 changeTemplate :: Connection -> (Maybe Template -> (Maybe Template, a)) -> Int64 -> IO a
 changeTemplate conn f id = do
   template <- query conn "SELECT * FROM Template WHERE id == ?" (Only id)
@@ -190,6 +192,45 @@ addReport conn template title owner encrypted = withTransaction conn $ do
                     Just u -> return u
                     Nothing -> throw $ VisibleError "You can't create encrypted reports without a public key associated to you."
       key <- generateSharedKey
-      key <- encryptSharedKey key pub
-      execute conn "INSERT INTO ReportKey (user, report, key) VALUES (?, ?, ?)" (userId owner, reportId, key)
+      key' <- encryptSharedKey key pub
+      execute conn "INSERT INTO ReportKey (user, report, key) VALUES (?, ?, ?)" (userId owner, reportId, key')
+      escrowKey <- query conn "SELECT User.id, User.publicKey FROM User, SettingEscrowAccount WHERE User.id = SettingEscrowAccount.user AND User.id != ?" (Only $ userId owner)
+      case escrowKey of
+        [(escrowId, Just escrowPublic)] -> do
+            escKey <- encryptSharedKey key (read escrowPublic)
+            execute conn "INSERT INTO ReportKey (user, report, key) VALUES (?, ?, ?)" (escrowId :: Int64, reportId, escKey)
+        [(_, Nothing)] -> throw $ VisibleError "Escrow account not correctly set. Need a public key assigned."
+        _ -> return ()
       return reportId
+
+-- Autofill
+editSavedTemplateVars :: Connection -> (Maybe SavedVars -> (Maybe SavedVars, a)) -> Int64 -> Int64 -> IO a
+editSavedTemplateVars conn callback template savedVar = withTransaction conn $ do
+  vars <- getSavedTemplateVars conn template (Just savedVar)
+  case vars of
+    [p] -> do let (res, ret) = callback (Just p)
+              case res of
+                Nothing -> return ret
+                Just res' -> do
+                  executeNamed conn "UPDATE SavedVar SET name = :name, description = :description, data = :data WHERE id = :id AND templateVars = :templateVars"
+                                    [":name" := savedVarsName res'
+                                    ,":description" := savedVarsDescription res'
+                                    ,":data" := savedVarsData res'
+                                    ,":id" := savedVar
+                                    ,":templateVars" := template]
+                  execute conn "DELETE FROM SavedTemplateVar WHERE savedVar = ?" (Only savedVar)
+                  flip mapM (savedVarsVar res') $ \(tempVar, d) -> do
+                    execute conn "INSERT INTO SavedTemplateVar (savedVar, templateVar, data) VALUES (?, ?, ?)" (savedVar, tempVar, d)
+                  return ret
+    [] -> let (_, a) = callback Nothing
+            in return a
+
+addSavedTemplateVars :: Connection -> Int64 -> SavedVars -> IO Int64
+addSavedTemplateVars conn template saved = withTransaction conn $ do
+  traceShowM saved
+  execute conn "INSERT INTO SavedVar (templateVars, name, description, data) VALUES (?, ?, ?, ?)"
+               (savedVarsTemplate saved, savedVarsName saved, savedVarsDescription saved, savedVarsData saved)
+  newId <- lastInsertRowId conn
+  flip mapM (savedVarsVar saved) $ \(tempVar, d) -> do
+    execute conn "INSERT INTO SavedTemplateVar (savedVar, templateVar, data) VALUES (?, ?, ?)" (newId, tempVar, d)
+  return newId

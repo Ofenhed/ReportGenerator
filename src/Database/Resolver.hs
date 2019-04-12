@@ -13,6 +13,7 @@ import Database.SQLite.Simple.ToRow
 import Data.IORef (newIORef, readIORef, atomicModifyIORef')
 import Data.Int (Int64)
 import Control.Exception
+import Data.Maybe (mapMaybe)
 
 import qualified Data.Text            as Text
 import qualified Data.Map             as Map
@@ -70,7 +71,7 @@ prepareGetAllChildVariables conn key = do
                                                           \WHEN 'templateVar' THEN TemplateVars.templateVar = :template \
                                                           \WHEN 'templateVars' THEN TemplateVars.templateVars = :template \
                                                           \END"
-      reportStatement' = openStatement conn "SELECT id, data, iv FROM ReportVars WHERE parent = ? AND template = ? ORDER BY weight ASC"
+      reportStatement' = openStatement conn "SELECT id, data, iv FROM ReportVars WHERE parent = ? AND template = ?"
       bracketeer templateStatement reportStatement template parent = do
         let (target, val) = templateParentName template :: (Text.Text, Int64)
         withBindNamed templateStatement [":target" := target, ":template" := val] $
@@ -173,18 +174,6 @@ getTemplatesWithLists conn = query_ conn "WITH RECURSIVE \
                                                   \ON (has_arrays.has_vars = False AND TemplateVars.templateVar = has_arrays.pvar)) \
                                           \SELECT Template.* FROM has_arrays, Template \
                                             \WHERE has_arrays.has_vars = True AND Template.id = has_arrays.temp GROUP BY has_arrays.temp;"
-
-type TemplateVarTree = ([TemplateVars], [TemplateVar])
-data TemplateVars = TemplateVars { templateVarsId :: Int64
-                                 , templateVarsName :: Text.Text
-                                 , templateVarsDescription :: Maybe Text.Text
-                                 , templateVarsChildren :: TemplateVarTree } deriving Show
-
-data TemplateVar = TemplateVar { templateVarId :: Int64
-                               , templateVarName :: Text.Text
-                               , templateVarDescription :: Maybe Text.Text
-                               , templateVarDefault :: Maybe Text.Text
-                               , templateVarChildren :: TemplateVarTree } deriving Show
 
 getTemplateAndVariables :: Connection -> Int64 -> IO (Maybe (Template, TemplateVarTree))
 getTemplateAndVariables conn id = do
@@ -311,3 +300,44 @@ getUserEncryptionKeyFor conn user rid = do
   case res of
     [(Only key)] -> return $ Just key
     [] -> return Nothing
+
+-- Autofill
+getTemplateVars :: Connection -> Int64 -> IO (Maybe (Template, TemplateVars))
+getTemplateVars conn varsId = do
+  templateId <- getParentTemplate conn (IndexTempVars varsId)
+  case templateId of
+    Nothing -> return Nothing
+    Just templateId' -> do
+      Just (template, vars) <- getTemplateAndVariables conn templateId'
+      let findId (vars, var) = let vars' = foldr (\v state -> case state of
+                                                                Nothing -> if templateVarsId v == varsId
+                                                                             then Just v
+                                                                             else findId $ templateVarsChildren v
+                                                                x -> x)
+                                                 Nothing
+                                                 vars
+                                   var' = foldr (\v state -> case state of Nothing -> findId $ templateVarChildren v ; x -> x)
+                                                Nothing
+                                                var
+                                 in case (vars', var') of
+                                      (x@(Just _), Nothing) -> x
+                                      (Nothing, x@(Just _)) -> x
+                                      (Nothing, Nothing) -> Nothing
+                                      _ -> error "This should not happen with a well behaving database"
+      case findId vars of
+        Just x -> return $ Just (template, x)
+        Nothing -> return Nothing
+
+getSavedTemplateVars :: Connection -> Int64 -> Maybe Int64 -> IO [SavedVars]
+getSavedTemplateVars conn tVars savedVarId = do
+  parent <- queryNamed conn "SELECT id, name, description, data FROM SavedVar WHERE templateVars = :tempvar AND (:savedid IS NULL OR id = :savedid)"
+                            [":tempvar" := tVars
+                            ,":savedid" := savedVarId]
+  flip mapM parent $ \(id, name, description, d) -> do
+    children <- query conn "SELECT id, templateVar, data FROM SavedTemplateVar WHERE savedVar = ?" (Only id)
+    return $ SavedVars { savedVarsId = id
+                       , savedVarsTemplate = tVars
+                       , savedVarsName = name
+                       , savedVarsDescription = description
+                       , savedVarsData = d
+                       , savedVarsVar = Map.fromList $ flip map children $ \(id, templateVar, d) -> (templateVar, (id, d)) }

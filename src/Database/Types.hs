@@ -12,6 +12,7 @@ import Database.SQLite.Simple.FromRow
 import Database.SQLite.Simple.ToRow
 import Crypto.PubKey.RSA (PublicKey)
 import qualified Data.Text as Text
+import qualified Data.Map  as Map
 import qualified Data.Text.Encoding as Encoding
 import Data.Int (Int64)
 
@@ -46,6 +47,27 @@ data User = User { userId :: Int64
                  , userPassId :: Int64
                  , userKey :: Maybe (PublicKey, EncryptedPrivateKey) } deriving Show
 
+type TemplateVarTree = ([TemplateVars], [TemplateVar])
+data TemplateVars = TemplateVars { templateVarsId :: Int64
+                                 , templateVarsName :: Text.Text
+                                 , templateVarsDescription :: Maybe Text.Text
+                                 , templateVarsChildren :: TemplateVarTree } deriving Show
+
+data TemplateVar = TemplateVar { templateVarId :: Int64
+                               , templateVarName :: Text.Text
+                               , templateVarDescription :: Maybe Text.Text
+                               , templateVarDefault :: Maybe Text.Text
+                               , templateVarChildren :: TemplateVarTree } deriving Show
+
+data SavedVars = SavedVars { savedVarsId :: Int64
+                           , savedVarsTemplate :: Int64
+                           , savedVarsName :: Text.Text
+                           , savedVarsDescription :: Maybe Text.Text
+                           , savedVarsData :: Maybe Text.Text
+                           , savedVarsVar :: Map.Map Int64 (Int64, Text.Text) } deriving Show
+instance Default SavedVars where
+  def = SavedVars 0 0 Text.empty Nothing Nothing Map.empty
+
 setupDatabase conn = withTransaction conn $ do
     execute_ conn "CREATE TABLE IF NOT EXISTS SettingEscrowAccount (id INTEGER PRIMARY KEY, user INTEGER NOT NULL, FOREIGN KEY (user) REFERENCES user(id) ON DELETE CASCADE, CONSTRAINT only_one_escrow CHECK (id = 1));"
     execute_ conn "CREATE TABLE IF NOT EXISTS DatabaseVersion (id INTEGER PRIMARY KEY, version INTEGER NOT NULL, CONSTRAINT only_one_escrow CHECK (id = 1));"
@@ -63,19 +85,14 @@ setupDatabase conn = withTransaction conn $ do
     execute_ conn $ Query $ Text.concat ["CREATE TABLE IF NOT EXISTS TemplateVar (id INTEGER PRIMARY KEY AUTOINCREMENT, template INTEGER NULL, templateVar INTEGER NULL, templateVars INTEGER NULL, name TEXT NOT NULL, description TEXT, data TEXT NULL, ", templateVarRelation, ");"]
     execute_ conn $ Query $ Text.concat ["CREATE TABLE IF NOT EXISTS TemplateVars (id INTEGER PRIMARY KEY AUTOINCREMENT, template INTEGER NULL, templateVar INTEGER NULL, templateVars INTEGER NULL, name TEXT NOT NULL, description TEXT, ", templateVarRelation, ");"]
 
-    execute_ conn "CREATE TABLE IF NOT EXISTS SavedVar (id INTEGER PRIMARY KEY, templateVars INTEGER NOT NULL, name TEXT NOT NULL, description TEXT NULL, FOREIGN KEY (templateVars) REFERENCES TemplateVars(id));"
+    execute_ conn "CREATE TABLE IF NOT EXISTS SavedVar (id INTEGER PRIMARY KEY, templateVars INTEGER NOT NULL, name TEXT NOT NULL, description TEXT NULL, data TEXT NULL, FOREIGN KEY (templateVars) REFERENCES TemplateVars(id), CONSTRAINT unique_name UNIQUE (templateVars, name));"
     execute_ conn "CREATE TABLE IF NOT EXISTS SavedTemplateVar (id INTEGER PRIMARY KEY AUTOINCREMENT, savedVar INTEGER NOT NULL, templateVar INTEGER NOT NULL, data TEXT NOT NULL, FOREIGN KEY (templateVar) REFERENCES TemplateVar(id), FOREIGN KEY (savedVar) REFERENCES SavedVar(id));"
 
     execute_ conn "CREATE TABLE IF NOT EXISTS Report (id INTEGER PRIMARY KEY AUTOINCREMENT, template INTEGER NOT NULL, name TEXT NOT NULL, owner INTEGER NOT NULL, FOREIGN KEY (template) REFERENCES TemplateVar(id), FOREIGN KEY (owner) REFERENCES User(id));"
     execute_ conn "CREATE TABLE IF NOT EXISTS ReportVar (id INTEGER PRIMARY KEY AUTOINCREMENT, template INTEGER NOT NULL, parent INTEGER NOT NULL, data TEXT NULL, iv TEXT NULL, FOREIGN KEY (template) REFERENCES TemplateVar(id), CONSTRAINT no_arrays UNIQUE (template, parent));"
-    execute_ conn "CREATE TABLE IF NOT EXISTS ReportVars (id INTEGER PRIMARY KEY AUTOINCREMENT, template INTEGER NOT NULL, parent INTEGER NOT NULL, data TEXT NULL, iv TEXT NULL, weight INTEGER NULL, FOREIGN KEY (template) REFERENCES TemplateVars(id), FOREIGN KEY (parent) REFERENCES ReportVar(id), CONSTRAINT sorted_list UNIQUE (template, parent, weight));"
+    execute_ conn "CREATE TABLE IF NOT EXISTS ReportVars (id INTEGER PRIMARY KEY AUTOINCREMENT, template INTEGER NOT NULL, parent INTEGER NOT NULL, data TEXT NULL, iv TEXT NULL, FOREIGN KEY (template) REFERENCES TemplateVars(id), FOREIGN KEY (parent) REFERENCES ReportVar(id));"
     execute_ conn "CREATE TABLE IF NOT EXISTS CustVar (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, report INTEGER NOT NULL, data TEXT NULL, iv TEXT NULL, FOREIGN KEY (report) REFERENCES Report(id), CONSTRAINT no_arrays UNIQUE (report, name));"
     execute_ conn "CREATE TABLE IF NOT EXISTS ReportKey (id INTEGER PRIMARY KEY AUTOINCREMENT, user INTEGER NOT NULL, report INTEGER NOT NULL, key TEXT NOT NULL, FOREIGN KEY (user) REFERENCES User(id), FOREIGN KEY (report) REFERENCES Report(id), CONSTRAINT only_one_key_per_report_and_user UNIQUE (user, report));"
-
-    execute_ conn "CREATE TRIGGER IF NOT EXISTS AutomaticReportVarsWeight AFTER INSERT ON ReportVars FOR EACH ROW WHEN NEW.weight IS NULL BEGIN UPDATE ReportVars SET weight = (SELECT MAX((SELECT weight FROM ReportVars WHERE parent = NEW.parent AND template = NEW.template UNION SELECT 0)) + 1) WHERE id = NEW.id; END;"
-    execute_ conn "CREATE TRIGGER IF NOT EXISTS ChangedReportVarsWeightToNull AFTER UPDATE ON ReportVars FOR EACH ROW WHEN NEW.weight IS NULL BEGIN UPDATE ReportVars SET weight = OLD.weight WHERE id = NEW.id; END;"
-    execute_ conn "CREATE TRIGGER IF NOT EXISTS DecreasedReportVarsWeight BEFORE UPDATE ON ReportVars FOR EACH ROW WHEN NEW.weight IS NOT NULL AND OLD.weight > NEW.weight BEGIN UPDATE ReportVars SET weight = weight + 1 WHERE id IN (SELECT id FROM ReportVars as CR WHERE CR.parent = NEW.parent AND CR.template = NEW.template AND CR.weight >= NEW.weight AND CR.weight < OLD.weight ORDER BY weight DESC); END;"
-    execute_ conn "CREATE TRIGGER IF NOT EXISTS IncreasedReportVarsWeight BEFORE UPDATE ON ReportVars FOR EACH ROW WHEN NEW.weight IS NOT NULL AND OLD.weight < NEW.weight BEGIN UPDATE ReportVars SET weight = weight - 1 WHERE id IN (SELECT id FROM ReportVars as CR WHERE CR.parent = NEW.parent AND CR.template = NEW.template AND CR.weight <= NEW.weight AND CR.weight > OLD.weight ORDER BY weight ASC); END;"
 
     -- Test data
 
