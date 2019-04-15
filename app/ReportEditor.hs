@@ -14,10 +14,12 @@ import SignedData
 import TemplateFiles
 import Encryption
 
+import Data.Default.Class (Default(..), def)
 import Text.Ginger.GVal (toGVal, ToGVal(..), dict, fromFunction)
 import Text.Ginger.Run (liftRun, runtimeErrorMessage)
 import Data.IORef (newIORef, readIORef, atomicModifyIORef', atomicWriteIORef, IORef())
 import System.FilePath (isPathSeparator, normalise)
+import System.Random (randomRIO)
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Encoding
@@ -53,33 +55,57 @@ data TemplateDataFields = DataFieldBuilder { fieldCheckbox :: [Text.Text],
                                              fieldValue :: [Text.Text],
                                              fieldFile :: [Text.Text] }
                         | DataFieldAlreadyUsed deriving (Show, Read)
+instance Default TemplateDataFields where
+  def = DataFieldBuilder [] [] []
 
 dataFieldModifier hmac ref func = do
-  let modify modifier val = case val of
-                              [(_, value)] -> liftRun $ atomicModifyIORef' ref $ \ref -> (modifier ref $ asText value, value)
+  let modifyMaybe modifier key value = liftRun $ atomicModifyIORef' ref $ \ref ->
+                                           (flip (Map.insert key)
+                                                 ref
+                                                 $ modifier (Map.findWithDefault def key ref)
+                                                            $ asText value
+                                           , value)
+      modify modifier val = case val of
+                              [(_, value)] -> modifyMaybe modifier Nothing value
+                              [(_, value), (Just "form", form)] -> modifyMaybe modifier (Just $ asText form) value
                               _ -> throw $ VisibleError $ Text.concat ["Incorrect use of function ", func]
   case func of
-    "add_value" -> return $ fromFunction $ modify (\d v -> d { fieldValue = v:fieldValue d })
-    "add_checkbox" -> return $ fromFunction $ modify (\d v -> d { fieldCheckbox = v:fieldCheckbox d })
-    "add_file" -> return $ fromFunction $ modify (\d v -> d { fieldFile = v:fieldFile d })
+    "add_value" -> return $ fromFunction $ modify $ \d v -> d { fieldValue = v:fieldValue d }
+    "add_checkbox" -> return $ fromFunction $ modify $ \d v -> d { fieldCheckbox = v:fieldCheckbox d }
+    "add_file" -> return $ fromFunction $ modify $ \d v -> d { fieldFile = v:fieldFile d }
+    "new_form" -> return $ fromFunction $ \_ -> let doInsert = do name <- flip mapM [1..5] $ (\_ -> randomRIO ('a', 'z'))
+                                                                  let key = Just $ Text.pack name
+                                                                  succ <- atomicModifyIORef' ref $ \ref -> do
+                                                                    case Map.lookup key ref of
+                                                                      Nothing -> (Map.insert key def ref, Just name)
+                                                                      Just _ -> (ref, Nothing)
+                                                                  case succ of
+                                                                    Just name -> return $ toGVal name
+                                                                    Nothing -> doInsert
+                                                  in liftRun doInsert
 
-    "signed_fields" -> return $ fromFunction $ \_ -> do
-                                  key <- liftRun $ atomicModifyIORef' ref $
-                                                     \ref -> case ref of
-                                                               var@DataFieldBuilder { fieldCheckbox = cb
-                                                                                , fieldValue = tb
-                                                                                , fieldFile = fs } -> (DataFieldAlreadyUsed, Just $ show $ signData hmac var)
-                                                               DataFieldAlreadyUsed -> (DataFieldAlreadyUsed, Nothing)
-                                  case key of
-                                    Nothing -> throw $ VisibleError "Fields has already been signed"
-                                    Just j -> return $ toGVal j
+    "signed_fields" -> return $ fromFunction $ \val -> do
+                                  key <- case val of
+                                           [(_, form)] -> return $ Just $ asText form
+                                           [] -> return Nothing
+                                           _ -> throw $ VisibleError $ Text.concat ["Incorrect use of function ", func]
+                                  newMap <- liftRun $ atomicModifyIORef' ref $
+                                                        \ref -> case Map.lookup key ref of
+                                                                  Just (var@DataFieldBuilder { fieldCheckbox = cb
+                                                                                   , fieldValue = tb
+                                                                                   , fieldFile = fs }) -> (Map.insert key DataFieldAlreadyUsed ref, Right $ show $ signData hmac var)
+                                                                  Just DataFieldAlreadyUsed -> (ref, Left "This field has already been signed")
+                                                                  Nothing -> (ref, Left "Tried to sign a field which does not exist")
+                                  case newMap of
+                                    Left err -> throw $ VisibleError err
+                                    Right j -> return $ toGVal j
     _ -> throw $ VisibleError $ Text.concat ["Variable ", func, " does not exist"]
 
 editReport :: Maybe Int64 -> [Text.Text] -> CsrfFormApplicationWithEncryptedKey
 editReport template args id key csrf context req f = do
   encryptionKey <- getUserEncryptionKeyFor (sessionDbConn context) (fromJust $ sessionUser context) id
   reportAndVars <- getReportAndVariables (sessionDbConn context) id template encryptionKey
-  toSaveMvar <- newIORef $ DataFieldBuilder { fieldCheckbox = [], fieldValue = [], fieldFile = [] }
+  toSaveMvar <- newIORef (Map.fromList [(Nothing, def)] :: Map.Map (Maybe Text.Text) (TemplateDataFields))
   let getSavedVars context' = do
         cachedSavedVars <- newIORef (Nothing, def :: GVal (Run p IO Html))
         return $ do
@@ -94,12 +120,12 @@ editReport template args id key csrf context req f = do
                                                                      Just (idx, vars) -> idx:((concat $ map recursiveFindArrs vars) ++ children)
                                                                      Nothing -> children
                   arrs = Map.map recursiveFindArrs reportVars'
-              saved <- liftRun $ flip mapM arrs $ mapM $ \idx -> case last $ traceShowId idx of
+              saved <- liftRun $ flip mapM arrs $ mapM $ \idx -> case last idx of
                                                   IndexTempVars i -> getSavedTemplateVars (sessionDbConn context) i Nothing >>= \saved -> return $ Just (Text.pack $ show $ idx, saved)
                                                   _ -> return Nothing
               let saved' = toGVal $ Map.map (Map.fromList . mapMaybe Prelude.id) saved
               liftRun $ atomicWriteIORef cachedSavedVars $ (Just reportVars', saved')
-              return $ traceShowId saved'
+              return saved'
       (rpc, args') = case args of
                        "rpc":a -> (True, a)
                        a -> (False, a)
