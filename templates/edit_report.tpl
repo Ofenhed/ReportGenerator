@@ -1,10 +1,25 @@
 {% set title = "Edit report - %s"|format(report.name) %}
+{% macro make_form_element(name, attrs) -%}
+  <{{name}} {% for attr in attrs|keys %}{%if attr == "form" && attrs["form"]|none -%}
+    form="main_form"
+  {%- else -%}
+    {{attr}}="{{attrs[attr]}}"
+  {%-endif%} {% endfor %}>
+{%- endmacro %}
 {% macro make_text(var) %}
-  <input type="text" name="{{ add_value(var.idx) }}" value="{{ var.val }}">
+  {{ make_form_element("input", {"type":"text", "name":add_value(var.idx), "value":var.val, "form":kwargs["form"]}) }}
 {% endmacro %}
 {% macro make_textarea(var) -%}
-  <textarea name="{{ add_value(var.idx) }}">{{ var.val }}</textarea>
+  {{- make_form_element("textarea", {"name":add_value(var.idx), "form":kwargs["form"]}) -}}{{- var.val -}}</textarea>
 {%- endmacro %}
+{% macro make_checkbox(var, caption) %}
+  {% if var.val == "1" %}
+    {% set attrs = {"name":add_checkbox(var.idx), "type":"checkbox", "value":"1", "checked":"checked", "form":kwargs["form"]} %}
+  {% else %}
+    {% set attrs = {"name":add_checkbox(var.idx), "type":"checkbox", "value":"1", "form":kwargs["form"]} %}
+  {% endif %}
+  {{ make_form_element("input", attrs) }}<label>{{caption}}</label>
+{% endmacro %}
 {% macro add_list_button(list, caption) %}
   <noscript>
     This button requires javascript to work.
@@ -17,19 +32,16 @@
   </noscript>
   <button type="button" onclick='javascript:execute_remove_list({{list.idx|json|raw}})'>{{caption}}</button>
 {% endmacro %}
-{% macro renderEditor() -%}
-  {{ eval(src=report.editor, context={"variables": variables, "report": report, "make_text": make_text, "make_textarea": make_textarea, "add_checkbox": add_checkbox, "add_file": add_file, "add_value": add_value, "args": args, "rpc": rpc, "csrf": csrf, "add_list_button": add_list_button, "remove_list_button": remove_list_button}) }}
-{%- endmacro %}
 {% if rpc == 0 %}
   {% include "default" %}
   {% if report.encrypted %}{% else %}
     <div class="warning">THIS REPORT IS NOT ENCRYPTED. DO NOT ADD SENSITIVE DATA TO IT!</div>
   {% endif %}
-  <form method="post" enctype="multipart/form-data" action="/report/{{report.id}}">
   <h1>{{ report.name }}</h1>
   <div style="border: 1px solid #0f0">
   {% include "template_curr" %}
   </div>
+  <form id="main_form" method="post" enctype="multipart/form-data" action="/report/{{report.id}}">
   <input type="hidden" name="fields" value="{{signed_fields()}}">
   <input type="hidden" name="csrf" value="{{csrf}}">
   <input type="submit" value="Save">
