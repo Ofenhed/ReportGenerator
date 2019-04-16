@@ -14,6 +14,8 @@ import SignedData
 import TemplateFiles
 import Encryption
 
+import Network.Wai (requestHeaders)
+import Network.HTTP.Types (hReferer, renderSimpleQuery)
 import Data.Default.Class (Default(..), def)
 import Text.Ginger.GVal (toGVal, ToGVal(..), dict, fromFunction)
 import Text.Ginger.Run (liftRun, runtimeErrorMessage)
@@ -132,8 +134,8 @@ editReport template args id key csrf context req f = do
   case reportAndVars of
     Nothing -> throw $ VisibleErrorWithStatus status404 "Could not find report"
     Just (report, context') -> do
-      let lookup :: (Run p IO Html (GVal (Run p IO Html))) -> VarName -> Run p IO Html (GVal (Run p IO Html))
-          lookup savedVarsFetcher name = case name of
+      let lookup' :: (Run p IO Html (GVal (Run p IO Html))) -> VarName -> Run p IO Html (GVal (Run p IO Html))
+          lookup' savedVarsFetcher name = case name of
                           "report" -> return $ toGVal report
                           "variables" -> liftRun $ readIORef context' >>= return . toGVal . (Map.map IndexedReportVar) . reportContextVariable
                           "custom_variables" -> return $ toGVal [("image_1", "no")]
@@ -141,6 +143,10 @@ editReport template args id key csrf context req f = do
                           "args" -> return $ toGVal args'
                           "rpc" -> return $ toGVal rpc
                           "saved_vars" -> savedVarsFetcher
+                          "referrer" -> return $ toGVal $ case lookup hReferer $ requestHeaders req of
+                                                            Just x -> Just $ Text.pack $ C8.unpack x
+                                                            Nothing -> Nothing
+                          "create_redirect" -> return $ fromFunction $ \[(Nothing, url)] -> return $ toGVal $ Text.pack $ C8.unpack $ renderSimpleQuery False [("RedirectUrl", C8.pack $ show $ signData (sessionHasher context) $ asText url)]
                           -- "delete_template_var" -> \vars -> case vars of
                           --                                     ["delete_id", var] -> do
                           --                                       let var' = read $ asText var :: IndexPathType
@@ -156,7 +162,7 @@ editReport template args id key csrf context req f = do
                                    ["template", sub] -> getTemplateEditor (sessionDbConn context) context' encryptionKey sub True >>= return . (maybe Nothing $ Just . Text.unpack)
                                    _ -> return Nothing
       savedVarsFetcher <- getSavedVars context'
-      result <- runTemplate context (Just includer) "edit_report" $ lookup savedVarsFetcher
+      result <- runTemplate context (Just includer) "edit_report" $ lookup' savedVarsFetcher
       f $ responseText status200 [] result
     
 saveReport :: Int64 -> CsrfVerifiedApplication
@@ -186,5 +192,6 @@ reportAddList rid (params, _) context req f = do
   variables <- case lookup "idx" params of
                  Just a -> return $ read $ Text.unpack a
                  Nothing -> throw $ VisibleError "No list to add"
-  _ <- addArray (sessionDbConn context) encryptionKey rid variables Nothing
-  redirectBack req f
+  idx <- addArray (sessionDbConn context) encryptionKey rid variables Nothing
+  redirectBackOverridable (sessionHasher context) [("idx", Text.pack $ show idx)
+                                                  ,("report_id", Text.pack $ show rid)] req f

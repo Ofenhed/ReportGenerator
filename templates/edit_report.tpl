@@ -21,10 +21,15 @@
   {{ make_form_element("input", attrs) }}<label>{{caption}}</label>
 {% endmacro %}
 {% macro add_list_button(list, caption) %}
-  <noscript>
-    This button requires javascript to work.
-  </noscript>
-  <button type="button" onclick='javascript:execute_add_list({{list.idx|json|raw}})'>{{caption}}</button>
+  {% set redirect = "" %}
+  {% if kwargs["redirect"]|none == False %}
+    {% set redirect = "?%s"|format(create_redirect(kwargs["redirect"])) %}
+  {% endif %}
+  <form action="/report/{{report.id}}/list/add{{redirect}}" method="post" target="_blank">
+  <input type="hidden" name="csrf" value="{{csrf}}">
+  <input type="hidden" name="idx" value="{{list.idx}}">
+  <input type="submit" value="{{caption}}">
+  </form>
 {% endmacro %}
 {% macro remove_list_button(list, caption) %}
   <noscript>
