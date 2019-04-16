@@ -70,8 +70,6 @@
 
   <a href="/report/generate/{{report.id}}">Generate report</a>
   
-  Executed: <pre style="border: 1px solid #000">{{ report.editor }}</pre>
-
   <script>
     function execute_add_list(idx) {
       var form = document.createElement("form");
