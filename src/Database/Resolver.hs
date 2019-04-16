@@ -89,11 +89,11 @@ prepareGetAllChildVariables conn key = do
   return $ \func -> bracket templateStatement' closeStatement $ \templateStatement ->
                     bracket reportStatement' closeStatement $ \reportStatement -> func $ bracketeer templateStatement reportStatement
 
-getReportAndVariables :: Connection -> Int64 -> Maybe Int64 -> Maybe EncryptionKey -> IO (Maybe (Report, IOReportContext))
-getReportAndVariables conn reportId tempId encKey = do
-  var <- case tempId of
+getReportAndVariables :: Connection -> Int64 -> Maybe Text.Text -> Maybe EncryptionKey -> IO (Maybe (Report, IOReportContext))
+getReportAndVariables conn reportId tempName encKey = do
+  var <- case tempName of
            Nothing -> query conn "SELECT Report.id, Report.name, ReportKey.id IS NOT NULL, Template.* FROM Report LEFT JOIN Template ON Report.template = Template.id LEFT JOIN ReportKey ON Report.id = ReportKey.report WHERE Report.id = ?" (Only reportId)
-           Just i -> query conn "SELECT Report.id, Report.name, ReportKey.id IS NOT NULL, Template.* FROM Report INNER JOIN Template ON Template.id = ? LEFT JOIN ReportKey ON Report.id = ReportKey.report WHERE Report.id = ?" (i, reportId)
+           Just name -> query conn "SELECT Report.id, Report.name, ReportKey.id IS NOT NULL, Template.* FROM Report INNER JOIN Template ON Template.includeName = ? LEFT JOIN ReportKey ON Report.id = ReportKey.report WHERE Report.id = ?" (name, reportId)
   context <- newIORef $ ReportContext { reportContextId = reportId, reportContextVariable = Map.empty, reportContextCustomVariable = Map.empty }
   case var of
     [] -> return Nothing

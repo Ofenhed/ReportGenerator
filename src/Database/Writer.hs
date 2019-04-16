@@ -19,8 +19,6 @@ import System.Random (randomRIO)
 import qualified Data.Text as Text
 import qualified Data.Map as Map
 
-import Debug.Trace
-
 changeTemplate :: Connection -> (Maybe Template -> (Maybe Template, a)) -> Int64 -> IO a
 changeTemplate conn f id = do
   template <- query conn "SELECT * FROM Template WHERE id == ?" (Only id)
@@ -80,7 +78,7 @@ addTemplateArray conn parent name = let (parentType, idx) = templateParentName p
                                       in execute conn (Query $ Text.concat ["INSERT INTO TemplateVars (", parentType, ", name) VALUES (?, ?)"]) (idx, name)
 
 setVariable :: Connection -> Maybe EncryptionKey -> Int64 -> IndexPathType -> Maybe Text.Text -> IO Bool
-setVariable conn encKey report path value = withTransaction conn $ do
+setVariable conn encKey report path value = do
   let endOfPath = take 2 $ reverse path
   report' <- case endOfPath of
     i@(IndexArr _):_ -> getParentReport conn i
@@ -227,10 +225,28 @@ editSavedTemplateVars conn callback template savedVar = withTransaction conn $ d
 
 addSavedTemplateVars :: Connection -> Int64 -> SavedVars -> IO Int64
 addSavedTemplateVars conn template saved = withTransaction conn $ do
-  traceShowM saved
   execute conn "INSERT INTO SavedVar (templateVars, name, description, data) VALUES (?, ?, ?, ?)"
                (savedVarsTemplate saved, savedVarsName saved, savedVarsDescription saved, savedVarsData saved)
   newId <- lastInsertRowId conn
   flip mapM (savedVarsVar saved) $ \(tempVar, d) -> do
     execute conn "INSERT INTO SavedTemplateVar (savedVar, templateVar, data) VALUES (?, ?, ?)" (newId, tempVar, d)
   return newId
+
+copySavedVarsToReport :: Connection -> Maybe EncryptionKey -> Int64 -> IndexPathType -> Int64 -> IO (Maybe IndexPathType)
+copySavedVarsToReport conn encKey report path savedVars = withTransaction conn $ do
+  savedVarData <- query conn "SELECT data FROM SavedVar WHERE id = ?" (Only savedVars)
+  case savedVarData of
+    [(Only d)] -> do
+        succ <- setVariable conn encKey report path d
+        if not succ
+          then return Nothing
+          else do
+            varId <- lastInsertRowId conn
+            let varId' = (take (length path - 1) path) ++ [IndexArr varId]
+            vars <- query conn "SELECT data, templateVar FROM SavedTemplateVar WHERE savedVar = ?" (Only savedVars)
+            flip mapM vars $ \(d, idx) -> do
+              let path' = varId' ++ [IndexTempVar idx]
+              setVariable conn encKey report path' (d :: Maybe Text.Text)
+            return $ Just varId'
+
+    _ -> return Nothing

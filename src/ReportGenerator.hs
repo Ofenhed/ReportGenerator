@@ -30,8 +30,6 @@ import qualified Data.Map                       as Map
 import Data.Int (Int64)
 import qualified TextReplace as Replacer
 
-import Debug.Trace
-
 includeResolver conn context encKey file = do
   case Text.split isPathSeparator $ Text.pack $ normalise file of
     ["template", t] -> getTemplate conn context encKey t True >>= return . (maybe Nothing (Just . Text.unpack))

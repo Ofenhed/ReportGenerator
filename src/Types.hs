@@ -12,6 +12,8 @@ import Network.HTTP.Types (Status)
 import Data.Int (Int64)
 import Text.XML (Document(documentRoot), Element(..), Node(..), Name(nameLocalName))
 
+import Debug.Trace
+
 instance ToGVal m a => ToGVal m (Map.Map Text.Text a) where
   toGVal = helper . (Map.map toGVal)
     where
@@ -81,6 +83,7 @@ instance ToGVal m ReportVar where
                           , asList = if null $ snd $ fromMaybe ([], []) $ reportVarArray xs
                                        then Nothing
                                        else Just $ map toGVal $ snd $ fromMaybe ([], []) $ reportVarArray xs
+                          , Text.Ginger.GVal.length = Just $ maybe 0 (Prelude.length . snd)  $ reportVarArray xs
                           , asDictItems = Nothing
                           }
 
@@ -108,6 +111,7 @@ instance ToGVal m Element where
                                      ,("children", toGVal $ elementNodes elem)]
                   in mapped { isNull = False
                             , asList = Just $ map toGVal $ elementNodes elem
+                            , Text.Ginger.GVal.length = Just $ Prelude.length $ elementNodes elem
                             , asDictItems = Nothing }
 
 instance ToGVal m Node where

@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Encryption (CsrfFormApplicationWithEncryptedKey, CsrfVerifiedApplicationWithEncryptedKey, createTemporaryKey, getWithDecryptionKey, handleKeyDecryption, clearDecryptionKeys) where
+module Encryption (CsrfFormApplicationWithEncryptedKey, CsrfVerifiedApplicationWithEncryptedKey, createTemporaryKey, getWithDecryptionKey, handleKeyDecryption, clearDecryptionKeys, getWithEncryptionKey) where
 
 -- import Types
 import Common
@@ -23,7 +23,7 @@ import qualified Data.Text.Encoding as Encoding
 import System.Random
 
 type CsrfFormApplicationWithEncryptedKey = Int64 -> Maybe EncryptionKey -> CsrfFormApplication
-type CsrfVerifiedApplicationWithEncryptedKey = Int64 -> Maybe EncryptionKey -> CsrfFormApplication
+type CsrfVerifiedApplicationWithEncryptedKey = Int64 -> Maybe EncryptionKey -> CsrfVerifiedApplication
 sessionKeyName = "encryption_keys"
 
 clearDecryptionKeys context req = do
@@ -65,6 +65,25 @@ getWithDecryptionKey rid other csrf context req f = do
                                         then other rid (Just key') csrf context req f
                                         else queryDecryptionKey report' csrf context req f
               _ -> queryDecryptionKey report' csrf context req f
+
+getWithEncryptionKey :: Int64 -> CsrfVerifiedApplicationWithEncryptedKey -> CsrfVerifiedApplication
+getWithEncryptionKey rid other params context req f = do
+  report <- getReport (sessionDbConn context) rid
+  report' <- case report of
+               Just r -> return r
+               Nothing -> throw $ VisibleErrorWithStatus status404 "Could not find report"
+  if reportEncrypted report' == 0
+    then other rid Nothing params context req f
+    else do
+      let Just (sessionLookup, _) = Vault.lookup (sessionSession context) (vault req)
+      key <- sessionLookup sessionKeyName
+      case key of
+        Nothing -> throw $ VisibleError "You don't have access to post to this report"
+        Just s -> case reads $ Text.unpack s of
+          [((rid', key'), [])] -> if rid == rid'
+                                   then other rid (Just key') params context req f
+                                   else throw $ VisibleError "You currently don't have this report open"
+          _ -> throw $ VisibleError "Something went bad"
 
 handleKeyDecryption :: Int64 -> CsrfVerifiedApplication
 handleKeyDecryption rid (params, _) context req f = do

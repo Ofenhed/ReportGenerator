@@ -5,6 +5,7 @@ import Common
 import Csrf
 import Database.Types
 import Redirect
+import Encryption
 
 import Database.Resolver
 import Database.Writer
@@ -31,11 +32,11 @@ findTemplateVars (tVars, tVar) = let tVars' = concat $ flip map tVars $ \v -> (v
                                    in tVars' ++ tVar'
 
 flattenTemplateVars :: TemplateVars -> [TemplateVar]
-flattenTemplateVars tVars = flattenTemplateVars' $ templateVarsChildren tVars
-  where
-  flattenTemplateVars' (tVars, tVar) = let tVars' = concat $ map flattenTemplateVars tVars
-                                           tVar' = concat $ flip map tVar $ \v -> (v { templateVarChildren = ([], []) }) : (flattenTemplateVars' $ templateVarChildren v)
-                                         in tVars' ++ tVar'
+flattenTemplateVars = snd . templateVarsChildren
+  -- where
+  -- flattenTemplateVars' (tVars, tVar) = let tVars' = concat $ map flattenTemplateVars tVars
+  --                                          tVar' = concat $ flip map tVar $ \v -> (v { templateVarChildren = ([], []) }) : (flattenTemplateVars' $ templateVarChildren v)
+  --                                        in tVars' ++ tVar'
 
 listAutofillFor :: Int64 -> CsrfFormApplication
 listAutofillFor template csrf context req f = do
@@ -102,3 +103,14 @@ editAutofill_ templateId savedVar (params, _) context req f = do
                  Just idx -> editSavedTemplateVars (sessionDbConn context) (\(Just x) -> (Just $ changeVar x, savedVarsId x)) templateId idx
       redirect (Text.concat ["/autofill/", Text.pack $ show templateId, "/", Text.pack $ show newId]) req f
     _ -> throw $ VisibleError "Missing parameters"
+
+addSavedToReport_ :: CsrfVerifiedApplicationWithEncryptedKey
+addSavedToReport_ report encKey (params, _) context req f = do
+  case (lookup "path" params, lookup "savedVars" params) of
+    (Just path, Just saved) -> do
+        newIdx <- copySavedVarsToReport (sessionDbConn context) encKey report (read $ Text.unpack path) (read $ Text.unpack saved)
+        case newIdx of
+          Just newIdx' -> redirectBackOverridable (sessionHasher context) [("idx", Text.pack $ show newIdx')
+                                                                          ,("report_id", Text.pack $ show report)]
+                                                                          req f
+          Nothing -> throw $ VisibleError "Could not create variables from saved data"

@@ -4,7 +4,7 @@
     form="main_form"
   {%- else -%}
     {{attr}}="{{attrs[attr]}}"
-  {%-endif%} {% endfor %}>
+  {%-endif%} {% if attrs["form"]|none %}form="main_form"{% endif %}{% endfor %}>
 {%- endmacro %}
 {% macro make_text(var) %}
   {{ make_form_element("input", {"type":"text", "name":add_value(var.idx), "value":var.val, "form":kwargs["form"]}) }}
@@ -12,6 +12,22 @@
 {% macro make_textarea(var) -%}
   {{- make_form_element("textarea", {"name":add_value(var.idx), "form":kwargs["form"]}) -}}{{- var.val -}}</textarea>
 {%- endmacro %}
+{% macro make_autofill(var, autofill) %}
+  {% set redirect = "" %}
+  {% if kwargs["redirect"]|none == False %}
+    {% set redirect = "?%s"|format(create_redirect(kwargs["redirect"])) %}
+  {% endif %}
+  <form action="/report/autofill/{{report.id}}{{redirect}}" method="post" target="_blank">
+  <input type="hidden" name="csrf" value="{{csrf}}">
+  <input type="hidden" name="path" value="{{var.idx}}">
+  <select name="savedVars">
+  {% for v in autofill[var.idx] %}
+    <option value="{{v.id}}">{{v.name}}</option>
+  {% endfor %}
+  </select>
+  <input type="submit" value="Add from saved">
+  </form>
+{% endmacro %}
 {% macro make_checkbox(var, caption) %}
   {% if var.val == "1" %}
     {% set attrs = {"name":add_checkbox(var.idx), "type":"checkbox", "value":"1", "checked":"checked", "form":kwargs["form"]} %}

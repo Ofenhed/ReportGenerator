@@ -50,8 +50,7 @@ serverDir = "static/server"
 clientDir = "static/client"
 
 generateReport :: CsrfFormApplicationWithEncryptedKey
-generateReport id key csrf context req f = do
-  encryptionKey <- getUserEncryptionKeyFor (sessionDbConn context) (fromJust $ sessionUser context) id
+generateReport id encryptionKey csrf context req f = do
   rep <- render (sessionDbConn context) encryptionKey id
   f $ responseText status200 [] rep
 
@@ -85,10 +84,11 @@ app sess' req f = do
     -- List and edit reports
     ("GET", ["report"], Just _) -> call $ withCsrf $ listReports
     ("POST", ["report"], Just _) -> call $ verifyCsrf $ listReports_
-    ("GET", "report":"sub":id:tid:args, Just _) -> call $ withCsrf $ getWithDecryptionKey (read $ Text.unpack id :: Int64) $ editReport (Just $ read $ Text.unpack tid :: Maybe Int64) args
+    ("POST", ["report", "autofill", id], Just _) -> call $ verifyCsrf $ getWithEncryptionKey (read $ Text.unpack id :: Int64) addSavedToReport_
+    ("GET", "report":"sub":subname:id:args, Just _) -> call $ withCsrf $ getWithDecryptionKey (read $ Text.unpack id :: Int64) $ editReport (Just subname) args
     ("GET", "report":id:args, Just _) -> call $ withCsrf $ getWithDecryptionKey (read $ Text.unpack id :: Int64) $ editReport Nothing args
-    ("POST", ["report", id], Just _) -> call $ verifyCsrf $ saveReport (read $ Text.unpack id :: Int64)
-    ("POST", ["report", id, "list", "add"], Just _) -> call $ verifyCsrf $ reportAddList (read $ Text.unpack id :: Int64)
+    ("POST", ["report", id], Just _) -> call $ verifyCsrf $ getWithEncryptionKey (read $ Text.unpack id :: Int64) $ saveReport
+    ("POST", ["report", id, "list", "add"], Just _) -> call $ verifyCsrf $ getWithEncryptionKey (read $ Text.unpack id :: Int64) reportAddList
     -- ("POST", ["report", id, "list", "remove"], Just _) -> call $ verifyCsrf $ reportRemoveList (read $ Text.unpack id :: Int64)
     
     -- List and edit templates

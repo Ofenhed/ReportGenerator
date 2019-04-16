@@ -103,9 +103,8 @@ dataFieldModifier hmac ref func = do
                                     Right j -> return $ toGVal j
     _ -> throw $ VisibleError $ Text.concat ["Variable ", func, " does not exist"]
 
-editReport :: Maybe Int64 -> [Text.Text] -> CsrfFormApplicationWithEncryptedKey
-editReport template args id key csrf context req f = do
-  encryptionKey <- getUserEncryptionKeyFor (sessionDbConn context) (fromJust $ sessionUser context) id
+editReport :: Maybe Text.Text -> [Text.Text] -> CsrfFormApplicationWithEncryptedKey
+editReport template args id encryptionKey csrf context req f = do
   reportAndVars <- getReportAndVariables (sessionDbConn context) id template encryptionKey
   toSaveMvar <- newIORef (Map.fromList [(Nothing, def)] :: Map.Map (Maybe Text.Text) (TemplateDataFields))
   let getSavedVars context' = do
@@ -165,9 +164,8 @@ editReport template args id key csrf context req f = do
       result <- runTemplate context (Just includer) "edit_report" $ lookup' savedVarsFetcher
       f $ responseText status200 [] result
     
-saveReport :: Int64 -> CsrfVerifiedApplication
-saveReport id (params, files) context req f = do
-  encryptionKey <- getUserEncryptionKeyFor (sessionDbConn context) (fromJust $ sessionUser context) id
+saveReport :: CsrfVerifiedApplicationWithEncryptedKey
+saveReport id encryptionKey (params, files) context req f = do
   variables <- case lookup "fields" params of
                  Just f -> case verifySignedData (sessionHasher context) (read $ Text.unpack f) of
                              Just v -> return $ getSignedData v
@@ -185,10 +183,9 @@ saveReport id (params, files) context req f = do
                   then return True
                   else setVariable (sessionDbConn context) encryptionKey id (read $ Text.unpack file) $ Just $ Encoding.decodeLatin1 $ LC8.toStrict $ fileContent f
       Nothing -> return True
-  redirectSame req f
+  redirectBackOverridable (sessionHasher context) [("report_id", Text.pack $ show id)] req f
 
-reportAddList rid (params, _) context req f = do
-  encryptionKey <- getUserEncryptionKeyFor (sessionDbConn context) (fromJust $ sessionUser context) rid
+reportAddList rid encryptionKey (params, _) context req f = do
   variables <- case lookup "idx" params of
                  Just a -> return $ read $ Text.unpack a
                  Nothing -> throw $ VisibleError "No list to add"
