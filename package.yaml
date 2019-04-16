@@ -47,6 +47,7 @@ dependencies:
 - http-types
 - memory
 - mtl
+- network
 - random
 - safe
 - scientific

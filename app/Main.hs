@@ -23,7 +23,7 @@ import Network.Wai.Session.Map (mapStore_)
 import Network.Wai.Handler.Warp (defaultSettings, setPort, setServerName)
 import Network.Wai.Handler.WebSockets (websocketsOr)
 import Network.WebSockets.Connection (defaultConnectionOptions)
-import Network.Wai.Handler.WarpTLS (runTLS, tlsSettings)
+import Network.Wai.Handler.WarpTLS (runTLSSocket, tlsSettings)
 import Web.Cookie (SetCookie(setCookieSecure, setCookieHttpOnly, setCookiePath))
 import Data.Default.Class
 import Network.HTTP.Types (status200, status404, status500, Status(statusCode), hServer, hContentType)
@@ -43,7 +43,7 @@ import qualified Data.Text.IO                   as TextIO
 import qualified Database.SQLite.Simple         as DB
 import qualified Data.ByteString.Lazy.Char8     as LC8
 import qualified Data.ByteString.Char8          as C8
-
+import qualified Network.Socket                 as Sock
 
 staticDir = "static"
 serverDir = "static/server"
@@ -154,14 +154,33 @@ main = do
   hmac <- do key <- flip mapM [1..256] $ (\_ -> randomIO) :: IO [Char]
              return $ initialize $ C8.pack key
   db <- openDatabase
-  port <- lookup "PORT" <$> getEnvironment
+  [port, host, pubkey, privkey] <- getEnvironment >>= \env -> return $ map (flip lookup env) ["PORT", "HOST", "PUBKEY", "PRIVKEY"]
   let settings = setServerName C8.empty $ maybe defaultSettings (\p -> setPort (read p) defaultSettings) port
   let context = Session { sessionDbConn = db
                         , sessionSession = session
                         , sessionHasher = hmac
                         , sessionUser = Nothing }
-  runTLS (tlsSettings "new.cert.cert" "new.cert.key") settings $ defaultHeaders
-                                                               $ showErrors context
-                                                               $ withSession store "sess" (def { setCookieHttpOnly = True, setCookieSecure = True, setCookiePath = Just "/" }) session
-                                                               $ websocketsOr defaultConnectionOptions sockServer
-                                                               $ app context
+  (addrInfo:_) <- Sock.getAddrInfo (Just $ Sock.defaultHints { Sock.addrSocketType = Sock.Stream })
+                                   (case host of
+                                     p@(Just _) -> p
+                                     Nothing -> Just "127.0.0.1")
+                                   (case port of
+                                     p@(Just _) -> p
+                                     Nothing -> Just "3000")
+  sock <- Sock.socket (Sock.addrFamily addrInfo)
+                      (Sock.addrSocketType addrInfo)
+                      (Sock.addrProtocol addrInfo)
+  Sock.bind sock $ Sock.addrAddress addrInfo
+  Sock.listen sock 5
+  putStrLn $ "Listening on " ++ (show $ Sock.addrAddress addrInfo) ++ "."
+  let pubkey' = case pubkey of
+                  Just x -> x
+                  Nothing -> "tls.cert"
+      privkey' = case privkey of
+                   Just x -> x
+                   Nothing -> "tls.key"
+  runTLSSocket (tlsSettings pubkey' privkey') settings sock $ defaultHeaders
+                                                            $ showErrors context
+                                                            $ withSession store "sess" (def { setCookieHttpOnly = True, setCookieSecure = True, setCookiePath = Just "/" }) session
+                                                            $ websocketsOr defaultConnectionOptions sockServer
+                                                            $ app context
