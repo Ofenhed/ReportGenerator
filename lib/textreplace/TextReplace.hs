@@ -1,6 +1,7 @@
 module TextReplace (CaseSensitivity(CaseSensitive), build, run) where
 
 import qualified Data.Text as Text
+import Data.List (sortOn)
 
 data CaseSensitivity = CaseSensitive
 
