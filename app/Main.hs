@@ -154,7 +154,6 @@ main = do
   hmac <- do key <- flip mapM [1..256] $ (\_ -> randomIO) :: IO [Char]
              return $ initialize $ C8.pack key
   db <- openDatabase
-  addUser db "marcus" "test123"
   port <- lookup "PORT" <$> getEnvironment
   let settings = setServerName C8.empty $ maybe defaultSettings (\p -> setPort (read p) defaultSettings) port
   let context = Session { sessionDbConn = db
